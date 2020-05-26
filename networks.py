@@ -60,9 +60,6 @@ def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, 
                 print('[Epoch %d - mini-batch %5d] -> loss: %.5f' % (epoch + 1, i + 1, running_loss / 2000))
                 running_loss = 0.0
 
-        # Print results at the end of the epoch
-        print('[Epoch %d] loss: %.7f' % (epoch + 1, running_loss / n))
-
     print(f'{title} finished training')
 
 

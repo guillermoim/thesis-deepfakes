@@ -10,14 +10,14 @@ if __name__ == '__main__':
     print('Using', device)
     model.to(device)
 
-    path_to_save = 'data/ens_effnet_b0.pth'
+    path_to_save = 'models/ens_effnet_b0.pth'
 
     if torch.cuda.device_count() > 1:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
 
     model = torch.nn.DataParallel(model)
 
-    model.load_state_dict(torch.load('data/ens_effnet_b0.pth'))
+    model.load_state_dict(torch.load('models/ens_effnet_b0.pth'))
 
     dataset = ds.BalancedClusterDataset('datasets/ob_dataset.csv')
 

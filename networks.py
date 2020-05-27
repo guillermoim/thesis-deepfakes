@@ -40,7 +40,6 @@ def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, 
     for epoch in range(epochs):
 
         running_loss = .0
-        n = 0
 
         for idx, data in enumerate(loader, 0):
             # Get the inputs and labels
@@ -56,8 +55,8 @@ def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, 
             # print statistics
             running_loss += loss.item()
 
-            if idx % 2000 == 1999:  # print every 2000 mini-batches
-                print('[Epoch %d - mini-batch %5d] -> loss: %.5f' % (epoch + 1, i + 1, running_loss / 2000))
+            if idx % 500 == 499:  # print every 500 mini-batches
+                print('[Epoch %d - mini-batch %5d] -> loss: %.5f' % (epoch + 1, i + 1, running_loss / 499))
                 running_loss = 0.0
 
     print(f'{title} finished training')

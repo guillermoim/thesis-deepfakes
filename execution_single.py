@@ -26,9 +26,9 @@ if __name__ == '__main__':
     ns.train('eff-net b0', model, dataset, 30, 64, device)
     torch.save(model.state_dict(), path_to_save)
 
-    model.load_state_dict(torch.load('models/ens_effnet_b5.pth'))
+    model.load_state_dict(torch.load('models/effnet_b5.pth'))
     model.eval()
-    print('\n\t\t Test information')
+    print('\n\t\t Test information - Single Model')
     print('------------------------------------')
     path = 'test_execution.csv'
     ns.test(model, dataset, device, path)

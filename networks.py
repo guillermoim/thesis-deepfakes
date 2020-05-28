@@ -31,7 +31,7 @@ class CustomEnsemble(torch.nn.Module):
 def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, epochs: int, batch:int,  device:torch.device):
     # Cross Entropy Loss plays the same role as Softmax loss (multiclass regression)
     # With this we got two classes: {FAKE, REAL}. An the algorithm should spit the probablities.
-    criterion = torch.nn.CrossEntropyLoss(weight=None).to(device)
+    criterion = torch.nn.CrossEntropyLoss(weight=None, reduction='none').to(device)
     # optim.SGD(net.parameters(), lr=.0002, amsgrad=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=.0002, amsgrad=True)
 
@@ -39,7 +39,7 @@ def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, 
 
     for epoch in range(epochs):
 
-        running_loss = .0
+        running_loss = []
 
         for idx, data in enumerate(loader, 0):
             # Get the inputs and labels
@@ -53,11 +53,11 @@ def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, 
             loss.backward()
             optimizer.step()
             # print statistics
-            running_loss += loss.item()
+            running_loss.append(loss)
 
-            if idx % 500 == 499:  # print every 500 mini-batches
-                print('[Epoch %d - mini-batch %5d] -> loss: %.5f' % (epoch + 1, i + 1, running_loss / 499))
-                running_loss = 0.0
+        mean_loss = torch.cat(running_loss).mean()
+        print(f'Epoch {epoch} - loss {mean_loss}')
+
 
     print(f'{title} finished training')
 
@@ -87,14 +87,14 @@ def test(model :torch.nn.Module, dataset: torch.utils.data.Dataset, device:torch
             outputs = model(inputs)
             max, index = outputs.max(1)
             loss = criterion(outputs, labels)
-            row =(videos[idx], paths[idx], labels.item(), index.item(), loss.item())
+            row =(videos[idx], paths[idx], labels.item(), index.item(), loss.item(), outputs[0, 0].item(), outputs[0, 1].item())
             rows.append(row)
             # print statistics
             running_loss += loss.item()
 
         # Print results at the end of the epoch
         print('Finished Testing prediction of Model.')
-        print('Total exection', running_loss / idx)
+        print('Total execution', running_loss / idx)
 
-    res = pd.DataFrame(rows, columns = ('video', 'path', 'label', 'predicted', 'loss'))
-    res.to_csv(path)
+    res = pd.DataFrame(rows, columns = ('video', 'path', 'label', 'predicted', 'loss', 'score_real', 'score_fake'))
+    res.to_csv(path, index = False)

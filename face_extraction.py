@@ -125,5 +125,5 @@ def extract_faces_from_dir(src_dir, dst_dir):
 
 if __name__ == '__main__':
     
-    for i in range(10):
+    for i in range(0,10):
         extract_faces_from_dir(f'data/dfdc_train_part_{i}', f'data/faces/chunk{i}')

@@ -50,13 +50,15 @@ def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, 
             outputs = model(inputs)
             #print(inputs.size(), labels.size(), outputs.size())
             loss = criterion(outputs, labels)
+            # print statistics
+            running_loss.append(loss)
+
             loss.backward()
             optimizer.step()
-            # print statistics
-            running_loss+=loss
 
+        mean_loss = torch.cat(running_loss).mean()
         #mean_loss = torch.cat(running_loss).mean()
-        print(f'Epoch {epoch} - loss {running_loss}')
+        print(f'Epoch {epoch} - loss {mean_loss}')
 
     print(f'{title} finished training')
 

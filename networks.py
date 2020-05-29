@@ -1,6 +1,7 @@
 import torch
 from efficientnet_pytorch import EfficientNet
 import pandas as pd
+import numpy as np
 
 class CustomEnsemble(torch.nn.Module):
 
@@ -50,19 +51,14 @@ def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, 
             outputs = model(inputs)
             #print(inputs.size(), labels.size(), outputs.size())
             loss = criterion(outputs, labels)
-            # print statistics
-            running_loss.append(loss)
-
             loss.backward()
+            # print statistics
+            running_loss.append(loss.item())
             optimizer.step()
 
-<<<<<<< HEAD
-        mean_loss = torch.cat(running_loss).mean()
-        #mean_loss = torch.cat(running_loss).mean()
+        mean_loss = np.mean(running_loss)
         print(f'Epoch {epoch} - loss {mean_loss}')
 
-=======
->>>>>>> 67a67a13b9752815da2b57b181f5a0a41f9b1a1d
     print(f'{title} finished training')
 
 

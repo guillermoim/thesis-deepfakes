@@ -56,10 +56,13 @@ def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, 
             loss.backward()
             optimizer.step()
 
+<<<<<<< HEAD
         mean_loss = torch.cat(running_loss).mean()
         #mean_loss = torch.cat(running_loss).mean()
         print(f'Epoch {epoch} - loss {mean_loss}')
 
+=======
+>>>>>>> 67a67a13b9752815da2b57b181f5a0a41f9b1a1d
     print(f'{title} finished training')
 
 

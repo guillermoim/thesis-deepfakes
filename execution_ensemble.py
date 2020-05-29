@@ -23,7 +23,7 @@ if __name__ == '__main__':
     # TRAIN
     print('\t\t Training information')
     print('------------------------------------')
-    ns.train(name_sim, model, dataset, 15, 32, device)
+    ns.train(name_sim, model, dataset, 25, 32, device)
     torch.save(model.state_dict(), path_to_save)
 
     model.load_state_dict(torch.load(path_to_save))

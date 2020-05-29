@@ -31,7 +31,7 @@ class CustomEnsemble(torch.nn.Module):
 def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, epochs: int, batch:int,  device:torch.device):
     # Cross Entropy Loss plays the same role as Softmax loss (multiclass regression)
     # With this we got two classes: {FAKE, REAL}. An the algorithm should spit the probablities.
-    criterion = torch.nn.CrossEntropyLoss(weight=None, reduction='none').to(device)
+    criterion = torch.nn.CrossEntropyLoss(weight=None, reduction='mean').to(device)
     # optim.SGD(net.parameters(), lr=.0002, amsgrad=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=.0002, amsgrad=True)
 
@@ -53,11 +53,10 @@ def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, 
             loss.backward()
             optimizer.step()
             # print statistics
-            running_loss.append(loss)
+            running_loss+=loss
 
-        mean_loss = torch.cat(running_loss).mean()
-        print(f'Epoch {epoch} - loss {mean_loss}')
-
+        #mean_loss = torch.cat(running_loss).mean()
+        print(f'Epoch {epoch} - loss {running_loss}')
 
     print(f'{title} finished training')
 

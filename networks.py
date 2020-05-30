@@ -48,7 +48,6 @@ def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, 
             optimizer.zero_grad()
             # forward + backward + optimize
             outputs = model(inputs)
-            #print(inputs.size(), labels.size(), outputs.size())
             loss = criterion(outputs, labels)
             loss.backward()
             # print statistics
@@ -61,14 +60,13 @@ def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, 
     print(f'{title} finished training')
 
 
-def test(model :torch.nn.Module, dataset: torch.utils.data.Dataset, device:torch.device, path:str):
+def test(model :torch.nn.Module, dataset: torch.utils.data.Dataset, df:pd.DataFrame, device:torch.device, path:str):
 
     criterion = torch.nn.CrossEntropyLoss(weight=None).to(device)
     loader = torch.utils.data.DataLoader(dataset, batch_size=1)
 
     running_loss = .0
 
-    df = pd.read_csv('datasets/ob_dataset.csv')
     videos = df.video.tolist()
     paths = df.path.tolist()
 

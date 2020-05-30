@@ -87,7 +87,11 @@ def test(model :torch.nn.Module, dataset: torch.utils.data.Dataset, device:torch
             outputs = model(inputs)
             max, index = outputs.max(1)
             loss = criterion(outputs, labels)
-            row =(videos[idx], paths[idx], labels.item(), index.item(), loss.item(), outputs[0, 0].item(), outputs[0, 1].item())
+            real_score = outputs[0, 0].item()
+            fake_score = outputs[0, 1].item()
+            fake_prob = np.exp(fake_score) / (np.exp(fake_score) + np.exp(real_score))
+            row =(videos[idx], paths[idx], labels.item(), index.item(), loss.item(),
+                  outputs[0, 0].item(), outputs[0, 1].item(), fake_prob)
             rows.append(row)
             # print statistics
             running_loss += loss.item()
@@ -96,5 +100,5 @@ def test(model :torch.nn.Module, dataset: torch.utils.data.Dataset, device:torch
         print('Finished Testing prediction of Model.')
         print('Total execution', running_loss / idx)
 
-    res = pd.DataFrame(rows, columns = ('video', 'path', 'label', 'predicted', 'loss', 'score_real', 'score_fake'))
+    res = pd.DataFrame(rows, columns = ('video', 'path', 'label', 'predicted', 'loss', 'score_real', 'score_fake', 'fake_prob'))
     res.to_csv(path, index = False)

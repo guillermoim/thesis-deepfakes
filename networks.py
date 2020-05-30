@@ -24,7 +24,6 @@ class CustomEnsemble(torch.nn.Module):
         y3 = self.m3(x.clone()).unsqueeze(0)
 
         y = torch.cat((y0, y1, y2, y3))
-
         mean =  torch.mean(y, dim=0)
 
         return mean
@@ -63,10 +62,8 @@ def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, 
 
 
 def test(model :torch.nn.Module, dataset: torch.utils.data.Dataset, device:torch.device, path:str):
-    # Cross Entropy Loss plays the same role as Softmax loss (multiclass regression)
-    # With this we got two classes: {FAKE, REAL}. An the algorithm should spit the probablities.
-    criterion = torch.nn.CrossEntropyLoss(weight=None).to(device)
 
+    criterion = torch.nn.CrossEntropyLoss(weight=None).to(device)
     loader = torch.utils.data.DataLoader(dataset, batch_size=1)
 
     running_loss = .0
@@ -87,7 +84,11 @@ def test(model :torch.nn.Module, dataset: torch.utils.data.Dataset, device:torch
             outputs = model(inputs)
             max, index = outputs.max(1)
             loss = criterion(outputs, labels)
-            row =(videos[idx], paths[idx], labels.item(), index.item(), loss.item(), outputs[0, 0].item(), outputs[0, 1].item())
+            real_score = outputs[0, 0].item()
+            fake_score = outputs[0, 1].item()
+            fake_prob = np.exp(fake_score) / (np.exp(fake_score) + np.exp(real_score))
+            row =(videos[idx], paths[idx], labels.item(), index.item(), loss.item(),
+                  outputs[0, 0].item(), outputs[0, 1].item(), fake_prob)
             rows.append(row)
             # print statistics
             running_loss += loss.item()
@@ -96,5 +97,5 @@ def test(model :torch.nn.Module, dataset: torch.utils.data.Dataset, device:torch
         print('Finished Testing prediction of Model.')
         print('Total execution', running_loss / idx)
 
-    res = pd.DataFrame(rows, columns = ('video', 'path', 'label', 'predicted', 'loss', 'score_real', 'score_fake'))
+    res = pd.DataFrame(rows, columns = ('video', 'path', 'label', 'predicted', 'loss', 'score_real', 'score_fake', 'fake_prob'))
     res.to_csv(path, index = False)

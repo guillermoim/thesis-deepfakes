@@ -13,72 +13,20 @@ from albumentations import *
 import cv2
 
 
-regions = {  'left'     :   [0, 1, 2, 3, 4, 5, 6, 7, 8, 30, 29, 28, 27, 21, 20, 19, 18, 17],
-             'right'    :   [16, 15, 14, 13, 12, 11, 10, 9, 8, 30, 29, 28, 27, 22, 23, 24, 25, 26],
-             'bottom'   :   [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
-             'nose'     :   [31, 32, 33, 34, 35, 23, 21],
-             'eyes'     :   None,
-             'mouth'    :   None,
-             'top'      :   None,
+regions = {  'left-face'     :   [0, 1, 2, 3, 4, 5, 6, 7, 8, 30, 29, 28, 27, 21, 20, 19, 18, 17],
+             'right-face'    :   [16, 15, 14, 13, 12, 11, 10, 9, 8, 30, 29, 28, 27, 22, 23, 24, 25, 26],
+             'bottom-face'   :   [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+             'nose'          :   [31, 32, 33, 34, 35, 23, 21],
+             'eyes'          :   None,
+             'mouth'         :   None,
+             'top'           :   None,
+             'bottom'        :   None,
+             'right'         :   None,
+             'left'          :   None,
+
          }
 
 T = torchvision.transforms.ToTensor()
-
-class ImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):
-    """Samples elements randomly from a given list of indices for imbalanced dataset
-    Arguments:
-        indices (list, optional): a list of indices
-        num_samples (int, optional): number of samples to draw
-        callback_get_label func: a callback-like function which takes two arguments - dataset and index
-    """
-
-    def __init__(self, dataset, indices=None, num_samples=None, callback_get_label=None):
-                
-        # if indices is not provided, 
-        # all elements in the dataset will be considered
-        self.indices = list(range(len(dataset))) \
-            if indices is None else indices
-
-        # define custom callback
-        self.callback_get_label = callback_get_label
-
-        # if num_samples is not provided, 
-        # draw `len(indices)` samples in each iteration
-        self.num_samples = len(self.indices) \
-            if num_samples is None else num_samples
-            
-        # distribution of classes in the dataset 
-        label_to_count = {}
-        for idx in self.indices:
-            label = self._get_label(dataset, idx)
-            if label in label_to_count:
-                label_to_count[label] += 1
-            else:
-                label_to_count[label] = 1
-                
-        # weight for each sample
-        weights = [1.0 / label_to_count[self._get_label(dataset, idx)]
-                   for idx in self.indices]
-        self.weights = torch.DoubleTensor(weights)
-
-    def _get_label(self, dataset, idx):
-        if isinstance(dataset, torchvision.datasets.MNIST):
-            return dataset.train_labels[idx].item()
-        elif isinstance(dataset, torchvision.datasets.ImageFolder):
-            return dataset.imgs[idx][1]
-        elif isinstance(dataset, torch.utils.data.Subset):
-            return dataset.dataset.imgs[idx][1]
-        elif self.callback_get_label:
-            return self.callback_get_label(dataset, idx)
-        else:
-            raise NotImplementedError
-                
-    def __iter__(self):
-        return (self.indices[i] for i in torch.multinomial(
-            self.weights, self.num_samples, replacement=True))
-
-    def __len__(self):
-        return self.num_samples
 
 class RandomDataset(torch.utils.data.IterableDataset):
 
@@ -187,6 +135,34 @@ def create_train_transforms(size=224):
        ShiftScaleRotate(shift_limit=0.1, scale_limit=0.2, rotate_limit=10, border_mode=cv2.BORDER_CONSTANT, p=0.5),
     ])
 
+def oclude(lands, size=224):
+    
+    part = random.choice(list(regions.keys()))
+    
+    poly = None
+    
+    if part == 'eyes':
+        poly = [(lands[36][0]-10, lands[36][1] + 20), (lands[36][0]-10, lands[36][1] - 20), (lands[45][0]+10, lands[45][1] - 20), (lands[45][0]+10, lands[45][1] + 20)]
+    elif part == 'mouth':
+        poly = [(lands[48][0]-5, lands[48][1] + 15), (lands[48][0]-5, lands[48][1] - 15), (lands[54][0]+5, lands[54][1] - 15), (lands[54][0]+5, lands[54][1] + 15)]
+    elif part == 'top':
+        y = max((lands[29][1], lands[41][1], lands[46][1]))
+        poly = [(0, 0), (size, 0), (size, y), (0, y)]
+    elif part == 'bottom':
+        y = max((lands[29][1], lands[41][1], lands[46][1]))
+        poly = [(0, y), (size, y), (size, size), (0, size)]
+    elif part == 'left':
+        x = lands[30][0]
+        poly = [(0, 0), (x, 0), (x, size), (0, size)]
+    elif part == 'right':
+        x = lands[30][0]
+        poly = [(x, 0), (size, 0), (size, size), (x, size)]
+    else:
+        poly = [tuple(lands[v]) for v in regions[part]]
+        
+    return part, poly
+    
+
 def make_occlusion_fake(frame, original, lands):
     
     av = True
@@ -209,22 +185,12 @@ def make_occlusion_fake(frame, original, lands):
         diff_im = Image.fromarray(diff)
         draw = ImageDraw.Draw(diff_im)
     
-        part = random.choice(list(regions.keys()))
+        part, poly = oclude(lands)
         
         if part in done:
             continue
         done.append(part)
         if len(done) == len(regions): av = False
-        # TODO: Wrap this in another function shared with original one!
-        if part == 'eyes':
-            poly = [(lands[36][0]-10, lands[36][1] + 20), (lands[36][0]-10, lands[36][1] - 20), (lands[45][0]+10, lands[45][1] - 20), (lands[45][0]+10, lands[45][1] + 20)]
-        elif part == 'mouth':
-            poly = [(lands[48][0]-5, lands[48][1] + 15), (lands[48][0]-5, lands[48][1] - 15), (lands[54][0]+5, lands[54][1] - 15), (lands[54][0]+5, lands[54][1] + 15)]
-        elif part == 'top':
-            y = max((lands[29][1], lands[41][1], lands[46][1]))
-            poly = [(0, 0), (224, 0), (224, y), (0, y)]
-        else:
-            poly = [tuple(lands[v]) for v in regions[part]]
         
         draw.polygon(poly, fill='black')
         
@@ -255,17 +221,7 @@ def make_occlusion_original(frame, lands):
     
     draw = ImageDraw.Draw(img)
 
-    part = random.choice(list(regions.keys()))
-    
-    if part == 'eyes':
-        poly = [(lands[36][0]-10, lands[36][1] + 20), (lands[36][0]-10, lands[36][1] - 20), (lands[45][0]+10, lands[45][1] - 20), (lands[45][0]+10, lands[45][1] + 20)]
-    elif part == 'mouth':
-        poly = [(lands[48][0]-5, lands[48][1] + 15), (lands[48][0]-5, lands[48][1] - 15), (lands[54][0]+5, lands[54][1] - 15), (lands[54][0]+5, lands[54][1] + 15)]
-    elif part == 'top':
-        y = max((lands[29][1], lands[41][1], lands[46][1]))
-        poly = [(0, 0), (224, 0), (224, y), (0, y)]
-    else:
-        poly = [tuple(lands[v]) for v in regions[part]]
+    _, poly = oclude(lands)
         
     draw.polygon(poly, fill='black')
     pic = T(img) * 255

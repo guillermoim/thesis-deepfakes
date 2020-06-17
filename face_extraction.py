@@ -187,17 +187,25 @@ def extract_fake_faces_from_dir(src_dir, dst_dir):
                             
             metadata_out[video_fake] = {'label':label, 'num_faces':len(boxes), 'faces':out_pic_list, 'original':video, 'landmarks':landmarks_coordinates}
     
-    json.dump(metadata_out, open(f'{dst_dir}/metadata.json', 'w+'))       
-
-if __name__ == '__main__':
+    json.dump(metadata_out, open(f'{dst_dir}/metadata.json', 'w+'))   
     
-    a = 0; b = 10
+    
+def extract_frames_chunks(a, b):
     print(f'Extracting all real faces from {a} to {b}')
     for i in range(a,b):
-        break
         extract_real_faces_from_dir(f'data/dfdc_train_part_{i}', f'data/faces/chunk{i}')
     
     print(f'Extracting all fake faces from {a} to {b}')
     for i in range(a,b):
         extract_fake_faces_from_dir(f'data/dfdc_train_part_{i}', f'data/faces/chunk{i}')
-        break
+        
+
+def extract_frames_sample_chunk():
+    print('Extracting real faces from sample chunk.')
+    extract_real_faces_from_dir(f'data/train_sample_videos', f'data/faces_samples')
+    print('Extracting fake faces from sample chunk.')
+    extract_fake_faces_from_dir(f'data/train_sample_videos', f'data/faces_samples')
+    print('Done!')
+
+if __name__ == '__main__':
+    extract_frames_sample_chunk()

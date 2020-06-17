@@ -1,34 +1,44 @@
 import torch
-from efficientnet_pytorch import EfficientNet
 import pandas as pd
 import numpy as np
 
-class CustomEnsemble(torch.nn.Module):
+def train_var_2(name:str, model:torch.nn.Module, dataset:torch.utils.data.Dataset,
+                   epochs:int, batch_size:int, epoch_size:int, power:int, device:torch.device):
 
-    def __init__(self, name, num_classes):
-        super(CustomEnsemble, self).__init__()
-        torch.cuda.manual_seed(10)
-        self.m0 = EfficientNet.from_pretrained(name, num_classes=num_classes)
-        torch.cuda.manual_seed(80131)
-        self.m1 = EfficientNet.from_pretrained(name, num_classes=num_classes)
-        torch.cuda.manual_seed(9183120)
-        self.m2 = EfficientNet.from_pretrained(name, num_classes=num_classes)
-        torch.cuda.manual_seed(1231)
-        self.m3 = EfficientNet.from_pretrained(name, num_classes=num_classes)
+    # TODO: Label smoothing
+    # TODO: Focal loss
+    criterion = torch.nn.CrossEntropyLoss().to(device)
+    optimizer = torch.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, lambda x: (1-x/epochs)**power, last_epoch=-1)
 
-    def forward(self, x):
+    sampler = torch.utils.data.RandomSampler(dataset, replacement=True)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, sampler=sampler)
 
-        y0 = self.m0(x.clone()).unsqueeze(0)
-        y1 = self.m1(x.clone()).unsqueeze(0)
-        y2 = self.m2(x.clone()).unsqueeze(0)
-        y3 = self.m3(x.clone()).unsqueeze(0)
+    for epoch in range(epochs):
 
-        y = torch.cat((y0, y1, y2, y3))
-        mean =  torch.mean(y, dim=0)
+        running_loss = []
 
-        return mean
+        for idx, (inputs, labels) in enumerate(loader, 0):
 
-def train(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, epochs: int, batch:int,  device:torch.device):
+            inputs, labels = inputs.to(device), labels.to(device)
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            # print statistics
+            running_loss.append(loss.item())
+            optimizer.step()
+            scheduler.step()
+
+            if idx > epoch_size:
+                break
+
+        mean_loss = np.mean(running_loss)
+        print(f'Epoch {epoch} - loss {mean_loss}')
+
+        print(f'{name} finished training')
+
+def train_var_1(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, epochs: int, batch:int,  device:torch.device):
     # Cross Entropy Loss plays the same role as Softmax loss (multiclass regression)
     # With this we got two classes: {FAKE, REAL}. An the algorithm should spit the probablities.
     criterion = torch.nn.CrossEntropyLoss(weight=None, reduction='mean').to(device)

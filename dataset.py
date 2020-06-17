@@ -30,8 +30,29 @@ T = torchvision.transforms.ToTensor()
 
 
 class ValidationDataset(torch.utils.data.Dataset):
-    #TODO:
-    pass
+
+    def __init__(self, path, path_data):
+        super(ValidationDataset).__init__()
+            f_p = os.path.abspath(path)
+            assert os.path.exists(f_p), "The directory does not exist"
+            f_p_data = os.path.abspath(path_data)
+            assert os.path.exists(f_p_data), "The directory does not exist"
+            self.f_p = f_p
+            self.f_p_data = f_p_data
+            self.augment = create_train_transforms()
+
+            with open(self.f_p) as csvfile:
+                reader = csv.reader(csvfile, delimiter=',')
+                rows = [row for row in reader][1:]
+                self.rows = rows
+    
+    def __len__(self):
+            return len(self.rows)
+
+    def __getitem__(self, idx):
+        video, frame, original_frame, n_face, order, lands, label = self.rows[idx]
+        frame = Image.open(frame)
+        return T(res), torch.tensor(int(label))
     
 
 class AugmentedDataset(torch.utils.data.Dataset):
@@ -59,7 +80,7 @@ class AugmentedDataset(torch.utils.data.Dataset):
         res = oclude_frame(f'{self.f_p_data}/{frame}', f'{self.f_p_data}/{original_frame}', float(label), eval(lands))
         if random.random() > 0.5:
             res = self.augment(image=res)['image']
-        return T(res), torch.tensor(float(label))
+        return T(res), torch.tensor(int(label))
     
     
 def oclude_frame(frame, frame_original, label, lands, p=0.5):

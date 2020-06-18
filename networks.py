@@ -8,7 +8,7 @@ def train_var_2(name:str, model:torch.nn.Module, dataset:torch.utils.data.Datase
     # TODO: Label smoothing
     # TODO: Focal loss
     criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, lambda x: (1-x/epochs)**power, last_epoch=-1)
 
     sampler = torch.utils.data.RandomSampler(dataset, replacement=True)
@@ -36,7 +36,7 @@ def train_var_2(name:str, model:torch.nn.Module, dataset:torch.utils.data.Datase
         mean_loss = np.mean(running_loss)
         print(f'Epoch {epoch} - loss {mean_loss}')
 
-        print(f'{name} finished training')
+    print(f'{name} finished training')
 
 def train_var_1(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dataset, epochs: int, batch:int,  device:torch.device):
     # Cross Entropy Loss plays the same role as Softmax loss (multiclass regression)

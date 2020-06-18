@@ -33,26 +33,26 @@ class ValidationDataset(torch.utils.data.Dataset):
 
     def __init__(self, path, path_data):
         super(ValidationDataset).__init__()
-            f_p = os.path.abspath(path)
-            assert os.path.exists(f_p), "The directory does not exist"
-            f_p_data = os.path.abspath(path_data)
-            assert os.path.exists(f_p_data), "The directory does not exist"
-            self.f_p = f_p
-            self.f_p_data = f_p_data
-            self.augment = create_train_transforms()
+        f_p = os.path.abspath(path)
+        assert os.path.exists(f_p), "The directory does not exist"
+        f_p_data = os.path.abspath(path_data)
+        assert os.path.exists(f_p_data), "The directory does not exist"
+        self.f_p = f_p
+        self.f_p_data = f_p_data
+        self.augment = create_train_transforms()
 
-            with open(self.f_p) as csvfile:
-                reader = csv.reader(csvfile, delimiter=',')
-                rows = [row for row in reader][1:]
-                self.rows = rows
+        with open(self.f_p) as csvfile:
+            reader = csv.reader(csvfile, delimiter=',')
+            rows = [row for row in reader][1:]
+            self.rows = rows
     
     def __len__(self):
-            return len(self.rows)
+        return len(self.rows)
 
     def __getitem__(self, idx):
         video, frame, original_frame, n_face, order, lands, label = self.rows[idx]
         frame = Image.open(frame)
-        return T(res), torch.tensor(int(label))
+        return T(frame), torch.tensor(int(label))
     
 
 class AugmentedDataset(torch.utils.data.Dataset):
@@ -84,7 +84,7 @@ class AugmentedDataset(torch.utils.data.Dataset):
     
     
 def oclude_frame(frame, frame_original, label, lands, p=0.5):
-    res = None
+    
     if label > 0.5:
         if random.random() > 0.5:
             res = np.array(make_occlusion_fake(frame, frame_original, lands))

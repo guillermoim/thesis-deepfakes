@@ -31,7 +31,7 @@ T = torchvision.transforms.ToTensor()
 
 class ValidationDataset(torch.utils.data.Dataset):
 
-    def __init__(self, path, path_data):
+    def __init__(self, path, path_data, transform):
         super(ValidationDataset).__init__()
         f_p = os.path.abspath(path)
         assert os.path.exists(f_p), "The directory does not exist"
@@ -39,7 +39,7 @@ class ValidationDataset(torch.utils.data.Dataset):
         assert os.path.exists(f_p_data), "The directory does not exist"
         self.f_p = f_p
         self.f_p_data = f_p_data
-        self.augment = create_train_transforms()
+        self.transform = transform
 
         with open(self.f_p) as csvfile:
             reader = csv.reader(csvfile, delimiter=',')
@@ -52,12 +52,12 @@ class ValidationDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         video, frame, original_frame, n_face, order, lands, label = self.rows[idx]
         frame = Image.open(frame)
-        return T(frame), torch.tensor(int(label))
+        return self.transform(frame), torch.tensor(int(label))
     
 
 class AugmentedDataset(torch.utils.data.Dataset):
 
-    def __init__(self, path, path_data):
+    def __init__(self, path, path_data, transform):
         super(AugmentedDataset).__init__()
         f_p = os.path.abspath(path)
         assert os.path.exists(f_p), "The directory does not exist"
@@ -66,6 +66,7 @@ class AugmentedDataset(torch.utils.data.Dataset):
         self.f_p = f_p
         self.f_p_data = f_p_data
         self.augment = create_train_transforms()
+        self.transform = transform
         
         with open(self.f_p) as csvfile:
             reader = csv.reader(csvfile, delimiter=',')
@@ -80,7 +81,7 @@ class AugmentedDataset(torch.utils.data.Dataset):
         res = oclude_frame(f'{self.f_p_data}/{frame}', f'{self.f_p_data}/{original_frame}', float(label), eval(lands))
         if random.random() > 0.5:
             res = self.augment(image=res)['image']
-        return T(res), torch.tensor(int(label))
+        return self.transform(res), torch.tensor(int(label))
     
     
 def oclude_frame(frame, frame_original, label, lands, p=0.5):

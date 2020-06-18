@@ -8,8 +8,8 @@ def train_var_2(name:str, model:torch.nn.Module, dataset:torch.utils.data.Datase
     # TODO: Label smoothing
     # TODO: Focal loss
     criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
-    scheduler = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, lambda x: (1-x/epochs)**power, last_epoch=-1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-4)
+    #scheduler = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, lambda x: (1-x/epochs)**power, last_epoch=-1)
 
     sampler = torch.utils.data.RandomSampler(dataset, replacement=True)
     loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, sampler=sampler)
@@ -28,7 +28,7 @@ def train_var_2(name:str, model:torch.nn.Module, dataset:torch.utils.data.Datase
             # print statistics
             running_loss.append(loss.item())
             optimizer.step()
-            scheduler.step()
+            #scheduler.step()
 
             if idx > epoch_size:
                 break

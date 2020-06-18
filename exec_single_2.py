@@ -19,9 +19,9 @@ if __name__ == '__main__':
     dataset = ds.AugmentedDataset('datasets/full_train_dataset.csv', 'data/faces/')
 
     exec_name = 'EffNet-B7'
-    epochs = 10
+    epochs = 12
     batch_size = 48
-    epoch_size = 500
+    epoch_size = 2500
     power = 1
 
     print('\t\t Training Details')

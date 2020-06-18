@@ -84,7 +84,7 @@ class AugmentedDataset(torch.utils.data.Dataset):
     
     
 def oclude_frame(frame, frame_original, label, lands, p=0.5):
-    
+
     if label > 0.5:
         if random.random() > 0.5:
             res = np.array(make_occlusion_fake(frame, frame_original, lands))

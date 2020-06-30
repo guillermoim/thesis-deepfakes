@@ -9,7 +9,7 @@ def overlapping(low_1, high_1, low_2, high_2):
     return max(0, min(high_1, high_2) - max(low_1, low_2))
     
 
-def extract_real_faces_from_dir(src_dir, dst_dir):
+def extract_real_faces_from_dir(src_dir, dst_dir, scale_factor=0.5):
     
     # Init face detection net
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
@@ -59,7 +59,7 @@ def extract_real_faces_from_dir(src_dir, dst_dir):
             continue
 
         # Scale factor
-        scale_factor = 0.45
+        scale_factor = scale_factor
 
         # x and y lengths
         max_x = vframes[0].size()[0]
@@ -190,22 +190,23 @@ def extract_fake_faces_from_dir(src_dir, dst_dir):
     json.dump(metadata_out, open(f'{dst_dir}/metadata.json', 'w+'))   
     
     
-def extract_frames_chunks(a, b):
+def extract_frames_chunks(a, b, scale_factor=0.0):
     print(f'Extracting all real faces from {a} to {b}')
     for i in range(a,b):
-        extract_real_faces_from_dir(f'data/dfdc_train_part_{i}', f'data/faces/chunk{i}')
+        extract_real_faces_from_dir(f'data/dfdc_train_part_{i}', f'data/faces/chunk{i}', scale_factor=scale_factor)
     
     print(f'Extracting all fake faces from {a} to {b}')
     for i in range(a,b):
         extract_fake_faces_from_dir(f'data/dfdc_train_part_{i}', f'data/faces/chunk{i}')
         
 
-def extract_frames_sample_chunk():
+def extract_frames_sample_chunk(scale_factor=0.0):
     print('Extracting real faces from sample chunk.')
     extract_real_faces_from_dir(f'data/train_sample_videos', f'data/faces_samples')
     print('Extracting fake faces from sample chunk.')
-    extract_fake_faces_from_dir(f'data/train_sample_videos', f'data/faces_samples')
+    extract_fake_faces_from_dir(f'data/train_sample_videos', f'data/faces_samples', scale_factor=scale_factor)
     print('Done!')
 
 if __name__ == '__main__':
-    extract_frames_sample_chunk()
+    extract_frames_chunks(0, 10, scale_factor=.6)
+    extract_frames_sample_chunk(scale_factor=.6)

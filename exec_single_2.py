@@ -1,6 +1,7 @@
 import networks as ns
 import torch
 import dataset as ds
+from torchvision import transforms
 from efficientnet_pytorch import EfficientNet
 
 if __name__ == '__main__':
@@ -16,10 +17,13 @@ if __name__ == '__main__':
 
     model = torch.nn.DataParallel(model)
 
-    dataset = ds.AugmentedDataset('datasets/full_train_dataset.csv', 'data/faces/')
+    transform = transforms.Compose([transforms.ToTensor(),
+                                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]), ])
+
+    dataset = ds.AugmentedDataset('datasets/full_train_dataset.csv', 'data/faces/', transform = transform)
 
     exec_name = 'EffNet-B7'
-    epochs = 12
+    epochs = 30
     batch_size = 48
     epoch_size = 2500
     power = 1

@@ -31,7 +31,7 @@ T = torchvision.transforms.ToTensor()
 
 class ValidationDataset(torch.utils.data.Dataset):
 
-    def __init__(self, path, path_data, transform):
+    def __init__(self, path, path_data, transform, p = 0.5):
         super(ValidationDataset).__init__()
         f_p = os.path.abspath(path)
         assert os.path.exists(f_p), "The directory does not exist"
@@ -40,6 +40,7 @@ class ValidationDataset(torch.utils.data.Dataset):
         self.f_p = f_p
         self.f_p_data = f_p_data
         self.transform = transform
+        self.p = p
 
         with open(self.f_p) as csvfile:
             reader = csv.reader(csvfile, delimiter=',')
@@ -50,14 +51,15 @@ class ValidationDataset(torch.utils.data.Dataset):
         return len(self.rows)
 
     def __getitem__(self, idx):
-        video, frame, original_frame, n_face, order, lands, label = self.rows[idx]
+        video,frame,original_frame,n_face,order,landmarks,label = self.rows[idx]
+        frame = f'data/faces_samples/{frame}'
         frame = Image.open(frame)
         return self.transform(frame), torch.tensor(int(label))
     
 
 class AugmentedDataset(torch.utils.data.Dataset):
 
-    def __init__(self, path, path_data, transform):
+    def __init__(self, path, path_data, transform, p = 0.5, bce=False, size=224):
         super(AugmentedDataset).__init__()
         f_p = os.path.abspath(path)
         assert os.path.exists(f_p), "The directory does not exist"
@@ -65,9 +67,12 @@ class AugmentedDataset(torch.utils.data.Dataset):
         assert os.path.exists(f_p_data), "The directory does not exist"
         self.f_p = f_p
         self.f_p_data = f_p_data
-        self.augment = create_train_transforms()
+        self.augment = create_train_transforms(size)
         self.transform = transform
-        
+        self.p = p
+        self.bce = bce
+        self.size = size
+
         with open(self.f_p) as csvfile:
             reader = csv.reader(csvfile, delimiter=',')
             rows = [row for row in reader][1:]
@@ -78,24 +83,60 @@ class AugmentedDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         video, frame, original_frame, n_face, order, lands, label = self.rows[idx]
-        res = oclude_frame(f'{self.f_p_data}/{frame}', f'{self.f_p_data}/{original_frame}', float(label), eval(lands))
-        if random.random() > 0.5:
-            res = self.augment(image=res)['image']
-        return self.transform(res), torch.tensor(int(label))
-    
-    
-def oclude_frame(frame, frame_original, label, lands, p=0.5):
+        res = oclude_frame(f'{self.f_p_data}/{frame}', f'{self.f_p_data}/{original_frame}', float(label), eval(lands),
+                           p = self.p, size=self.size)
 
-    if label > 0.5:
-        if random.random() > 0.5:
-            res = np.array(make_occlusion_fake(frame, frame_original, lands))
+        res = self.augment(image=res)['image']
+        res = Image.fromarray(res)
+
+        if not self.bce:
+            return self.transform(res), torch.tensor(int(label))
         else:
-            res = center_image(np.array(Image.open(frame)), lands)
+            return self.transform(res), torch.tensor(float(label))
+
+
+class PlainDataset(torch.utils.data.Dataset):
+
+    def __init__(self, path, path_data, transform, bce=False):
+        super(PlainDataset).__init__()
+        f_p = os.path.abspath(path)
+        assert os.path.exists(f_p), "The directory does not exist"
+        f_p_data = os.path.abspath(path_data)
+        assert os.path.exists(f_p_data), "The directory does not exist"
+        self.f_p = f_p
+        self.f_p_data = f_p_data
+        self.transform = transform
+        self.bce = bce
+
+        with open(self.f_p) as csvfile:
+            reader = csv.reader(csvfile, delimiter=',')
+            rows = [row for row in reader][1:]
+            self.rows = rows
+
+    def __len__(self):
+        return len(self.rows)
+
+    def __getitem__(self, idx):
+        video, frame, original_frame, n_face, order, lands, label = self.rows[idx]
+        res = center_image(np.array(Image.open(f'{self.f_p_data}/{frame}')), eval(lands))
+        res = Image.fromarray(res)
+        if not self.bce:
+            return self.transform(res), torch.tensor(int(label))
+        else:
+            return self.transform(res), torch.tensor(float(label))
+    
+def oclude_frame(frame, frame_original, label, lands, p=0.5, size=224):
+
+    if label > 0:
+        if random.random() > p:
+            res = np.array(make_occlusion_fake(frame, frame_original, lands, size=size))
+        else:
+            res = center_image(np.array(Image.open(frame)), lands, size=size)
     else:
-        if random.random() > 0.5:
-            res = np.array(make_occlusion_original(frame, lands))
+        if random.random() > p:
+            res = np.array(make_occlusion_original(frame, lands, size=size))
         else:
-            res = center_image(np.array(Image.open(frame)), lands)
+            res = center_image(np.array(Image.open(frame)), lands, size=size)
     
     return res
     
@@ -116,9 +157,7 @@ def create_train_transforms(size=224):
 def oclude(lands, size=224):
     
     part = random.choice(list(regions.keys()))
-    
-    poly = None
-    
+        
     if part == 'eyes':
         poly = [(lands[36][0]-10, lands[36][1] + 20), (lands[36][0]-10, lands[36][1] - 20), (lands[45][0]+10, lands[45][1] - 20), (lands[45][0]+10, lands[45][1] + 20)]
     elif part == 'mouth':
@@ -141,11 +180,10 @@ def oclude(lands, size=224):
     return part, poly
     
 
-def make_occlusion_fake(frame, original, lands):
+def make_occlusion_fake(frame, original, lands, size=224):
     
     av = True
     done = []
-    
 
     forged = Image.open(frame)
     pristine = Image.open(original)
@@ -163,7 +201,7 @@ def make_occlusion_fake(frame, original, lands):
         diff_im = Image.fromarray(diff)
         draw = ImageDraw.Draw(diff_im)
     
-        part, poly = oclude(lands)
+        part, poly = oclude(lands, size=size)
         
         if part in done:
             continue
@@ -193,13 +231,13 @@ def make_occlusion_fake(frame, original, lands):
     
     return center_image(pic, lands)
 
-def make_occlusion_original(frame, lands):
+def make_occlusion_original(frame, lands, size=224):
     
     img = Image.open(frame)
     
     draw = ImageDraw.Draw(img)
 
-    _, poly = oclude(lands)
+    _, poly = oclude(lands, size=size)
         
     draw.polygon(poly, fill='black')
     pic = T(img) * 255
@@ -208,23 +246,13 @@ def make_occlusion_original(frame, lands):
     return center_image(pic, lands)
     
     
-def center_image(image, lands):
+def center_image(image, lands, size=224):
     '''Input: Image in numpy and points'''
-    box = dlib.rectangle(0,0,224,224)
+    box = dlib.rectangle(0,0,size,size)
     f_o_ds = dlib.full_object_detections()
-    points = [dlib.point(np.array(point)) for point in lands]
+    points = [dlib.point(np.array(point, dtype=np.float32)) for point in lands]
     f_o_d = dlib.full_object_detection(box, points)
     f_o_ds.append(f_o_d)
-    images = dlib.get_face_chips(image, f_o_ds, size=224, padding=0.4)
+    images = dlib.get_face_chips(image, f_o_ds, size=224, padding=0.9)
     return images[0]       
     
-
-def format_row(item, f_p_data):
-    img = Image.open(f'{f_p_data}/{item[-2]}')
-    # transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=[0.5, 0.5, 0.5],std=[0.5, 0.5, 0.5])])
-    # transform = transforms.Compose([transforms.Resize(224), transforms.ToTensor(), transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),])
-    transform = transforms.ToTensor()
-    # TODO: Should normalization be removed?
-    # If needed for regression the negative label can be changed here instead of in the middle of the running code
-    label = int(item[-3])
-    return transform(img), torch.tensor(int(label))

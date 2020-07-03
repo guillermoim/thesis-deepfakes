@@ -1,17 +1,15 @@
 import torch
 import pandas as pd
 import numpy as np
+from torchvision import transforms
+from focal_loss import FocalLoss
 
-def train_var_2(name:str, model:torch.nn.Module, dataset:torch.utils.data.Dataset,
-                   epochs:int, batch_size:int, epoch_size:int, power:int, device:torch.device):
+def train_var_2( name:str, model:torch.nn.Module, dataset:torch.utils.data.Dataset,
+                 criterion, optimizer, scheduler,
+                 epochs:int, batch_size:int, epoch_size:int, device:torch.device):
 
     # TODO: Label smoothing
-    # TODO: Focal loss
-    criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=1e-4)
-    #scheduler = torch.optim.lr_scheduler.MultiplicativeLR(optimizer, lambda x: (1-x/epochs)**power, last_epoch=-1)
-
-    sampler = torch.utils.data.RandomSampler(dataset, replacement=True)
+    sampler = torch.utils.data.RandomSampler(dataset, replacement=False)
     loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, sampler=sampler)
 
     for epoch in range(epochs):
@@ -25,10 +23,10 @@ def train_var_2(name:str, model:torch.nn.Module, dataset:torch.utils.data.Datase
             outputs = model(inputs)
             loss = criterion(outputs, labels)
             loss.backward()
-            # print statistics
+
             running_loss.append(loss.item())
             optimizer.step()
-            #scheduler.step()
+            scheduler.step()
 
             if idx > epoch_size:
                 break
@@ -70,15 +68,14 @@ def train_var_1(title:str, model :torch.nn.Module, dataset: torch.utils.data.Dat
     print(f'{title} finished training')
 
 
-def test(model :torch.nn.Module, dataset: torch.utils.data.Dataset, df:pd.DataFrame, device:torch.device, path:str):
+def test(model :torch.nn.Module, dataset: torch.utils.data.Dataset, device:torch.device, path:str, size:int):
 
-    criterion = torch.nn.CrossEntropyLoss(weight=None).to(device)
-    loader = torch.utils.data.DataLoader(dataset, batch_size=1)
+    criterion = FocalLoss(gamma=1).to(device)
+    sampler = torch.utils.data.RandomSampler(dataset, replacement=False)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=1, sampler=sampler)
 
-    running_loss = .0
-
-    videos = df.video.tolist()
-    paths = df.path.tolist()
+    running_loss = 0.0
+    total = 0
 
     rows = []
 
@@ -95,15 +92,17 @@ def test(model :torch.nn.Module, dataset: torch.utils.data.Dataset, df:pd.DataFr
             real_score = outputs[0, 0].item()
             fake_score = outputs[0, 1].item()
             fake_prob = np.exp(fake_score) / (np.exp(fake_score) + np.exp(real_score))
-            row =(videos[idx], paths[idx], labels.item(), index.item(), loss.item(),
-                  outputs[0, 0].item(), outputs[0, 1].item(), fake_prob)
+            row =(loss.item(), real_score, fake_score, labels.item(), index.item(), fake_prob)
             rows.append(row)
             # print statistics
-            running_loss += loss.item()
+            running_loss+=loss
+            if idx > size:
+                total = idx
+                break
 
         # Print results at the end of the epoch
-        print('Finished Testing prediction of Model.')
-        print('Total execution', running_loss / idx)
+        print('Finished Validation of Model.')
+        print('Total execution', running_loss / (idx+1))
 
-    res = pd.DataFrame(rows, columns = ('video', 'path', 'label', 'predicted', 'loss', 'score_real', 'score_fake', 'fake_prob'))
+    res = pd.DataFrame(rows, columns = ('loss', 'score:original', 'score_fake', 'labels', 'predicted', 'fake_prob'))
     res.to_csv(path, index = False)

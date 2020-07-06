@@ -31,7 +31,7 @@ T = torchvision.transforms.ToTensor()
 
 class ValidationDataset(torch.utils.data.Dataset):
 
-    def __init__(self, path, path_data, transform, p = 0.5):
+    def __init__(self, path, path_data, transform):
         super(ValidationDataset).__init__()
         f_p = os.path.abspath(path)
         assert os.path.exists(f_p), "The directory does not exist"
@@ -40,7 +40,6 @@ class ValidationDataset(torch.utils.data.Dataset):
         self.f_p = f_p
         self.f_p_data = f_p_data
         self.transform = transform
-        self.p = p
 
         with open(self.f_p) as csvfile:
             reader = csv.reader(csvfile, delimiter=',')
@@ -54,12 +53,12 @@ class ValidationDataset(torch.utils.data.Dataset):
         video,frame,original_frame,n_face,order,landmarks,label = self.rows[idx]
         frame = f'data/faces_samples/{frame}'
         frame = Image.open(frame)
-        return self.transform(frame), torch.tensor(int(label))
+        return self.transform(frame), torch.tensor(label)
     
 
 class AugmentedDataset(torch.utils.data.Dataset):
 
-    def __init__(self, path, path_data, transform, p = 0.5, bce=False, size=224):
+    def __init__(self, path, path_data, transform, p = 0.5, bce=False, size=224, label_smoothing=0.01):
         super(AugmentedDataset).__init__()
         f_p = os.path.abspath(path)
         assert os.path.exists(f_p), "The directory does not exist"
@@ -72,6 +71,7 @@ class AugmentedDataset(torch.utils.data.Dataset):
         self.p = p
         self.bce = bce
         self.size = size
+        self.label_smoothing=label_smoothing
 
         with open(self.f_p) as csvfile:
             reader = csv.reader(csvfile, delimiter=',')
@@ -92,7 +92,7 @@ class AugmentedDataset(torch.utils.data.Dataset):
         if not self.bce:
             return self.transform(res), torch.tensor(int(label))
         else:
-            return self.transform(res), torch.tensor(float(label))
+            return self.transform(res), torch.tensor(float([label]))
 
 
 class PlainDataset(torch.utils.data.Dataset):
@@ -253,6 +253,6 @@ def center_image(image, lands, size=224):
     points = [dlib.point(np.array(point, dtype=np.float32)) for point in lands]
     f_o_d = dlib.full_object_detection(box, points)
     f_o_ds.append(f_o_d)
-    images = dlib.get_face_chips(image, f_o_ds, size=224, padding=0.9)
+    images = dlib.get_face_chips(image, f_o_ds, size=224, padding=0.5)
     return images[0]       
     

@@ -92,7 +92,7 @@ class AugmentedDataset(torch.utils.data.Dataset):
         if not self.bce:
             return self.transform(res), torch.tensor(int(label))
         else:
-            return self.transform(res), torch.tensor(float([label]))
+            return self.transform(res), torch.tensor([float(label)])
 
 
 class PlainDataset(torch.utils.data.Dataset):

@@ -1,17 +1,19 @@
-import argparse
-import utils as U
-from torch.utils.tensorboard import SummaryWriter
-import torch
-from torch.utils.data import DataLoader
-from tqdm import tqdm
-import torch.nn.functional as F
-from training.datasets.classifier_dataset import DeepFakeClassifierDataset
-import networks as ns
-from apex.parallel import DistributedDataParallel, convert_syncbn_model
-from apex import amp
 import os
+import torch
+import models
+import argparse
 import pandas as pd
 import numpy as np
+import networks as ns
+import utils as U
+import torch.nn.functional as F
+
+from apex import amp
+from tqdm import tqdm
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from training.datasets.classifier_dataset import DeepFakeClassifierDataset
+from apex.parallel import DistributedDataParallel, convert_syncbn_model
 from torchvision import transforms
 
 os.environ["MKL_NUM_THREADS"] = "1"
@@ -25,21 +27,21 @@ def main():
 
     parser = argparse.ArgumentParser(description='Train a model with the parameters specified.')
 
-    parser.add_argument('-s', '-seed', type=int, default=0, help='Especificar semilla')
-    parser.add_argument('-m', '-model', choices=['effnet-b3','xception', 'effnet-b0', 'effnet-b5', 'effnet-b6', 'effnet-b7'],
-                        type=str, default='effnet-b5', help='Especificar modelo')
+    parser.add_argument('-s', '-seed', type=int, default=0, help='Specify manual seed')
+    parser.add_argument('-m', '-model', choices=['inceptionv4','xception','efficientnet-b3', 'efficientnet-b5', 'efficientnet-b7'],
+                        type=str, default='effnet-b5', help='Specify the type of model to train')
     parser.add_argument('-v', '-variant', choices=[0, 1, 2], type=int, default=0,
-                        help='Especificar variante de entrenamiento 0, 1 or 2.')
-    parser.add_argument('-epochs', type=int, default=30, help='Número total de epochs')
-    parser.add_argument('-epoch_size', type=int, default=2500, help='Tamaño (n_batches) de cada epoch')
-    parser.add_argument('-batch_size', type=int, default=42, help='Tamaño del batch')
+                        help='Especificar variante de entrenamiento 0, 1 or 2')
+    parser.add_argument('-epochs', type=int, default=30, help='Total number of epochs')
+    parser.add_argument('-epoch_size', type=int, default=2500, help='Size (in num of batches) of each epoch')
+    parser.add_argument('-batch_size', type=int, default=42, help='Batch size')
     parser.add_argument('-path_to_model', type=str, required=True, help='Path to store the model')
     parser.add_argument('--local_rank', type=int, required=True, default=0)
-    parser.add_argument('--ngpu', type=int, default=1, required=True, help='Número de gpus')
-    parser.add_argument('--n_workers', type=int, default=0, help='Número de workers para el dataloader')
-    parser.add_argument('--optim_step', type=int, default=1, help='Specify the number of iterations before optimizer updates.')
-    parser.add_argument('--distributed',  action='store_true', help='Specify whether to use distribution or not')
-    parser.add_argument('--amp',  action='store_false', help='Specify whether to use mixed precision or not')
+    parser.add_argument('--ngpu', type=int, default=1, required=True, help='Number of GPUs')
+    parser.add_argument('--n_workers', type=int, default=0, help='Number of workers for the DataLoader')
+    parser.add_argument('--optim_step', type=int, default=1, help='Specify the number of iterations before optimizer updates')
+    parser.add_argument('--distributed', type=bool, action='store_true', help='Specify whether to use Distributed Model or not')
+    parser.add_argument('--amp', type=bool, action='store_false', help='Specify whether to use Nvidia Automatic Mixed Precision or not')
 
     args = parser.parse_args()
 
@@ -53,9 +55,6 @@ def main():
     path_to_save = args.path_to_model
     n_workers = args.n_workers
     optim_step = args.optim_step
-    distributed = True
-    amp_ = True
-
 
     assert distributed or not amp_, "Mixed precision only allowed in distributed training mode."
 
@@ -68,7 +67,7 @@ def main():
     torch.manual_seed(seed)
 
     # Load the configuration
-    model, resize, criterion, optimizer, scheduler, normalization = U.load_config(model_name, variant)
+    model, resize, criterion, optimizer, scheduler, normalization = models.load_config(model_name, variant)
     print(epochs * epoch_size)
     #scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda x: (epochs*epoch_size - x) / (epochs*epoch_size))
     model = model.cuda()

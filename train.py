@@ -2,10 +2,9 @@ import os
 import torch
 import models
 import argparse
-import pandas as pd
-import numpy as np
-import networks as ns
 import utils as U
+import numpy as np
+import pandas as pd
 import torch.nn.functional as F
 
 from apex import amp
@@ -35,13 +34,12 @@ def main():
     parser.add_argument('-epochs', type=int, default=30, help='Total number of epochs')
     parser.add_argument('-epoch_size', type=int, default=2500, help='Size (in num of batches) of each epoch')
     parser.add_argument('-batch_size', type=int, default=42, help='Batch size')
-    parser.add_argument('-path_to_model', type=str, required=True, help='Path to store the model')
     parser.add_argument('--local_rank', type=int, required=True, default=0)
     parser.add_argument('--ngpu', type=int, default=1, required=True, help='Number of GPUs')
     parser.add_argument('--n_workers', type=int, default=0, help='Number of workers for the DataLoader')
     parser.add_argument('--optim_step', type=int, default=1, help='Specify the number of iterations before optimizer updates')
-    parser.add_argument('--distributed', type=bool, action='store_true', help='Specify whether to use Distributed Model or not')
-    parser.add_argument('--amp', type=bool, action='store_false', help='Specify whether to use Nvidia Automatic Mixed Precision or not')
+    parser.add_argument('--distributed', type=bool, default=True, help='Specify whether to use Distributed Model or not')
+    parser.add_argument('--amp', type=bool, default=False, help='Specify whether to use Nvidia Automatic Mixed Precision or not')
 
     args = parser.parse_args()
 
@@ -52,9 +50,12 @@ def main():
     epochs = args.epochs
     epoch_size = args.epoch_size
     batch_size = args.batch_size
-    path_to_save = args.path_to_model
     n_workers = args.n_workers
     optim_step = args.optim_step
+    distributed = args.distributed
+    amp_ = args.amp
+
+    path_to_save = f'models/{model_name}_{seed}_v{variant}.pth'
 
     assert distributed or not amp_, "Mixed precision only allowed in distributed training mode."
 
@@ -67,9 +68,8 @@ def main():
     torch.manual_seed(seed)
 
     # Load the configuration
-    model, resize, criterion, optimizer, scheduler, normalization = models.load_config(model_name, variant)
-    print(epochs * epoch_size)
-    #scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda x: (epochs*epoch_size - x) / (epochs*epoch_size))
+    model, resize, criterion, optimizer, scheduler, normalization, cast = models.load_config(model_name, variant, epochs, epoch_size)
+
     model = model.cuda()
 
     if distributed:
@@ -82,12 +82,11 @@ def main():
         model = torch.nn.DataParallel(model).cuda()
 
     # Generate tensorboard metrics report.
-    writer = SummaryWriter(f'runs/{model_name}_v{variant}_{seed}')
+    writer = SummaryWriter(f'runs/{model_name}_v{variant}_{seed}', flush_secs=15)
 
     # Initialize datasets
-    dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path='data/train_data', hardcore=False, normalize=normalization, folds_csv='data/train_data/folds.csv', label_smoothing =0, fold = 1, transforms=U.create_train_transforms(resize))
-
-    val_dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path='data/train_data', hardcore=False, mode='val', normalize=normalization, folds_csv='data/train_data/folds.csv', label_smoothing =0, reduce_val=True, transforms=U.create_val_transforms(resize))
+    dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path='data/train_data', hardcore=True, normalize = normalization, folds_csv='data/train_data/folds.csv', label_smoothing =0, transforms=U.create_train_transforms(resize))
+    val_dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path='data/train_data', hardcore=False, mode='val', normalize = normalization, folds_csv='data/train_data/folds.csv', label_smoothing =0, reduce_val=True, transforms=U.create_val_transforms(resize))
 
 
     # Start loop, catch KeyboardInterrupt to exit
@@ -122,15 +121,15 @@ def main():
 
 def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoch_size, batch_size, sampler, writer, local_rank, n_workers, optim_step, amp_):
 
-    losses = ns.AverageMeter()
-    f_losses = ns.AverageMeter()
-    r_losses = ns.AverageMeter()
+    losses = U.AverageMeter()
+    f_losses = U.AverageMeter()
+    r_losses = U.AverageMeter()
 
     loader = DataLoader(dataset, batch_size=batch_size, num_workers=n_workers, shuffle=sampler is None, sampler=sampler, pin_memory=False, drop_last=True)
 
     optimizer.zero_grad()
 
-    for idx, (data) in enumerate(tqdm(loader, desc=f'Epoch {epoch}: lr: {scheduler.get_lr()}', postfix=f'Loss : {losses.avg} - lr: {scheduler.get_lr()}', total=epoch_size)):
+    for idx, (data) in enumerate(tqdm(loader, desc=f'Epoch {epoch}: lr: {scheduler.get_lr()}', total=epoch_size)):
 
         inputs, labels = data['image'].cuda(), data['labels'].float().cuda()
 
@@ -161,10 +160,7 @@ def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoc
             optimizer.zero_grad()
 
         torch.cuda.synchronize()
-        print('epoch * 8', (epoch * 8) + idx + 1)
         a= (epoch * 8) + idx + 1
-        print('Lambda value', (15 * 8 - a), 15 * 8, (15 * 8 - a) / (15. * 8))
-        #scheduler.step((epoch * 15) + idx + 1)
 
         fake_idx = labels > .5
         real_idx = labels < .5
@@ -174,10 +170,6 @@ def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoc
 
         f_losses.update(fake_loss, fake_idx.size(0))
         r_losses.update(real_loss, real_idx.size(0))
-
-        writer.add_scalar(f'GPU-{local_rank}/epoch_{epoch}/Total Loss', losses.avg, global_step=idx)
-        writer.add_scalar(f'GPU-{local_rank}/epoch_{epoch}/Fake Loss', f_losses.avg, global_step=idx)
-        writer.add_scalar(f'GPU-{local_rank}/epoch_{epoch}/Real Loss', r_losses.avg, global_step=idx)
 
         if idx > epoch_size - 1:
             break
@@ -192,14 +184,15 @@ def validate(model, dataset, epoch, criterion, batch_size, writer, local_rank):
 
     loader = DataLoader(dataset, batch_size=batch_size, num_workers=8, shuffle= None, pin_memory=True)
 
-    losses = ns.AverageMeter()
-    f_losses = ns.AverageMeter()
-    r_losses = ns.AverageMeter()
+    losses = U.AverageMeter()
+    f_losses = U.AverageMeter()
+    r_losses = U.AverageMeter()
 
     with torch.no_grad():
 
         for data in tqdm(loader):
-            3# Get the inputs and labels
+
+            # Get the inputs and labels
             inputs, labels, img_name, valid, rotations = [*data.values()]
             inputs, labels = inputs.cuda(), labels.float().cuda()
             outputs = model(inputs)

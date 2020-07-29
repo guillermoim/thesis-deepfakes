@@ -1,0 +1,1 @@
+python extract_pipeline.py --data_path ../../downloads/dfdc_train_part_25 --out ../sample/chunk_25

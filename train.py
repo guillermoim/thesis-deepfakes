@@ -27,7 +27,7 @@ def main():
     parser = argparse.ArgumentParser(description='Train a model with the parameters specified.')
 
     parser.add_argument('-s', '-seed', type=int, default=0, help='Specify manual seed')
-    parser.add_argument('-m', '-model', choices=['inceptionv4','xception','efficientnet-b3', 'efficientnet-b5', 'efficientnet-b7'],
+    parser.add_argument('-m', '-model', choices=models.get_available_models(),
                         type=str, default='effnet-b5', help='Specify the type of model to train')
     parser.add_argument('-v', '-variant', choices=[0, 1, 2], type=int, default=0,
                         help='Especificar variante de entrenamiento 0, 1 or 2')
@@ -114,8 +114,6 @@ def main():
         except KeyboardInterrupt:
             break
 
-        scheduler.step()
-
     torch.save(model.state_dict(), path_to_save)
 
 
@@ -129,7 +127,7 @@ def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoc
 
     optimizer.zero_grad()
 
-    for idx, (data) in enumerate(tqdm(loader, desc=f'Epoch {epoch}: lr: {scheduler.get_lr()}', total=epoch_size)):
+    for idx, (data) in enumerate(tqdm(loader, desc=f'Epoch {epoch}: lr: {scheduler["scheduler"].get_lr()}', total=epoch_size)):
 
         inputs, labels = data['image'].cuda(), data['labels'].float().cuda()
 
@@ -160,7 +158,6 @@ def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoc
             optimizer.zero_grad()
 
         torch.cuda.synchronize()
-        a= (epoch * 8) + idx + 1
 
         fake_idx = labels > .5
         real_idx = labels < .5
@@ -171,8 +168,14 @@ def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoc
         f_losses.update(fake_loss, fake_idx.size(0))
         r_losses.update(real_loss, real_idx.size(0))
 
+        if scheduler['mode'] == 'iteration':
+            scheduler['scheduler'].step()
+
         if idx > epoch_size - 1:
             break
+
+    if scheduler['mode'] == 'epoch':
+        scheduler['scheduler'].step()
 
     if local_rank == 0:
         writer.add_scalar('Train/Total Loss', losses.avg, global_step=epoch)

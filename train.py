@@ -40,6 +40,7 @@ def main():
     parser.add_argument('--optim_step', type=int, default=1, help='Specify the number of iterations before optimizer updates')
     parser.add_argument('--distributed', type=bool, default=True, help='Specify whether to use Distributed Model or not')
     parser.add_argument('--amp', type=bool, default=False, help='Specify whether to use Nvidia Automatic Mixed Precision or not')
+    parser.add_argument('--data_path', type=str, default='../data', help='Specify path to data.')
 
     args = parser.parse_args()
 
@@ -54,6 +55,8 @@ def main():
     optim_step = args.optim_step
     distributed = args.distributed
     amp_ = args.amp
+    data_path = args.data_path
+
 
     path_to_save = f'models/{model_name}_{seed}_v{variant}.pth'
 
@@ -85,8 +88,8 @@ def main():
     writer = SummaryWriter(f'runs/{model_name}_v{variant}_{seed}', flush_secs=15)
 
     # Initialize datasets
-    dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path='data/train_data', hardcore=True, normalize = normalization, folds_csv='data/train_data/folds.csv', label_smoothing =0, transforms=U.create_train_transforms(resize))
-    val_dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path='data/train_data', hardcore=False, mode='val', normalize = normalization, folds_csv='data/train_data/folds.csv', label_smoothing =0, reduce_val=True, transforms=U.create_val_transforms(resize))
+    dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path=f'{data_path}', hardcore=True, normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=8, transforms=U.create_train_transforms(resize))
+    val_dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path='data/train_data', hardcore=False, mode='val', normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=8, reduce_val=True, transforms=U.create_val_transforms(resize))
 
 
     # Start loop, catch KeyboardInterrupt to exit

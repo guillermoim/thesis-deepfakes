@@ -119,7 +119,7 @@ def load_config(name, variant, n_epochs, epoch_size):
         '''
 
         criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(0.75).cuda())
-        optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4, nesterov=True)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.005, momentum=0.9, weight_decay=1e-4, nesterov=True)
         scheduler = {'scheduler': torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda= lambda x : (n_epochs*epoch_size - x) / (n_epochs*epoch_size)),
                      'mode': 'iteration'}
 
@@ -130,13 +130,13 @@ def load_config(name, variant, n_epochs, epoch_size):
         '''
 
         criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(0.75).cuda())
-        optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4, nesterov=True)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4, nesterov=True)
         scheduler = {'scheduler': torch.optim.lr_scheduler.StepLR(optimizer, step_size= n_epochs // 3),
                      'mode': 'epoch'}
     else:
         # Implement Focal-Loss
         criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(0.75).cuda())
-        optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4, nesterov=True)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4, nesterov=True)
         scheduler = {'scheduler': torch.optim.lr_scheduler.StepLR(optimizer, step_size=n_epochs // 3),
                      'mode': 'epoch'}
 

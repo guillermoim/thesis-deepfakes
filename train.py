@@ -88,9 +88,8 @@ def main():
     writer = SummaryWriter(f'runs/{model_name}_v{variant}_{seed}', flush_secs=15)
 
     # Initialize datasets
-    dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path=f'{data_path}', hardcore=True, normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=8, transforms=U.create_train_transforms(resize))
-    val_dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path='data/train_data', hardcore=False, mode='val', normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=8, reduce_val=True, transforms=U.create_val_transforms(resize))
-
+    dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path=f'{data_path}', hardcore=True, normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=3, transforms=U.create_train_transforms(resize))
+    val_dataset = DeepFakeClassifierDataset(crops_dir='crops',  data_path=f'{data_path}', mode='val', normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=3, reduce_val=True, transforms=U.create_val_transforms(resize))
 
     # Start loop, catch KeyboardInterrupt to exit
     for epoch in range(epochs):
@@ -113,7 +112,7 @@ def main():
         val_dataset.reset(1, seed)
         model.eval()
         try:
-            validate(model, val_dataset, epoch, criterion, 2 * batch_size, writer, args.local_rank)
+            validate(model, val_dataset, epoch, criterion, batch_size, writer, args.local_rank)
         except KeyboardInterrupt:
             break
 

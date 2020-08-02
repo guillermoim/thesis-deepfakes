@@ -1,7 +1,7 @@
 source ../torch/bin/activate
 
-PYTHONPATH=. CUDA_VISIBLE_DEVICES="1,2,3,4,5,6" python -m torch.distributed.launch --nproc_per_node=6 train.py -s 201 -m regnety-1.6GF -batch_size 16 -epoch_size 600 -epochs 30 --ngpu 6 --n_workers 6 -v 0 --amp True --data_path ../data
-PYTHONPATH=. CUDA_VISIBLE_DEVICES="1,2,3,4,5,6" python -m torch.distributed.launch --nproc_per_node=6 train.py -s 201 -m efficientnet-b3 -batch_size 16 -epoch_size 600 -epochs 30 --ngpu 6 --n_workers 6 -v 0 --amp True --data_path ../data
+PYTHONPATH=. CUDA_VISIBLE_DEVICES="1,2,3,4,5,6" python -m torch.distributed.launch --nproc_per_node=6 train.py -s 306 -m efficientnet-b3 -batch_size 32 -epoch_size 600 -epochs 30 --ngpu 6 --n_workers 6 -v 0 --amp True --data_path data/train_data > outputs/effnety305.txt
+#PYTHONPATH=. CUDA_VISIBLE_DEVICES="1,2,3,4,5,6" python -m torch.distributed.launch --nproc_per_node=6 train.py -s 304 -m regnety-1.6GF -batch_size 16 -epoch_size 600 -epochs 30 --ngpu 6 --n_workers 6 -v 0 --amp True --data_path data/train_data > outputs/regnety21.txt
 
 
 #PYTHONPATH=. CUDA_VISIBLE_DEVICES="1,2,3,4,5,6" python -m torch.distributed.launch --nproc_per_node=6 train.py -s 1 -m efficientnet-b3 -batch_size 32 -epoch_size 1000 -epochs 30 --ngpu 6 --n_workers 6 -v 0 --amp True > outputs/effnet-b3_1.txt

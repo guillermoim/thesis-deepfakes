@@ -57,10 +57,11 @@ def main():
     amp_ = args.amp
     data_path = args.data_path
 
-
     path_to_save = f'models/{model_name}_{seed}_v{variant}.pth'
 
     assert distributed or not amp_, "Mixed precision only allowed in distributed training mode."
+
+    best_loss = 1000 # Sets a high initial best loss so the first model derived is saved
 
     if distributed:
 
@@ -71,14 +72,14 @@ def main():
     torch.manual_seed(seed)
 
     # Load the configuration
-    model, resize, criterion, optimizer, scheduler, normalization, cast = models.load_config(model_name, variant, epochs, epoch_size)
-
+    model, resize, criterion, optimizer, scheduler, normalization, desc = models.load_config(model_name, variant, epochs, epoch_size)
     model = model.cuda()
 
     if distributed:
         model = convert_syncbn_model(model)
     if amp_:
         model, optimizer = amp.initialize(model, optimizer, opt_level='O1', loss_scale='dynamic')
+
     if distributed:
         model = DistributedDataParallel(model, delay_allreduce=True)
     else:
@@ -87,36 +88,42 @@ def main():
     # Generate tensorboard metrics report.
     writer = SummaryWriter(f'runs/{model_name}_v{variant}_{seed}', flush_secs=15)
 
+    if args.local_rank == 0:
+        writer.add_text('Description', str(desc), global_step=0)
+
     # Initialize datasets
     dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path=f'{data_path}', hardcore=True, normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=3, transforms=U.create_train_transforms(resize))
-    val_dataset = DeepFakeClassifierDataset(crops_dir='crops',  data_path=f'{data_path}', mode='val', normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=3, reduce_val=True, transforms=U.create_val_transforms(resize))
 
-    # Start loop, catch KeyboardInterrupt to exit
+    val_dataset = DeepFakeClassifierDataset(crops_dir='crops',  data_path=f'{data_path}', mode='val', normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=3, reduce_val=False, transforms=U.create_val_transforms(resize))
+    val_dataset.reset(1, seed)
+
     for epoch in range(epochs):
 
         model.train()
 
         dataset.reset(epoch, seed)
+
         if distributed:
             sampler = torch.utils.data.distributed.DistributedSampler(dataset)
             sampler.set_epoch(epoch)
         else:
             sampler = None
 
-        try:
-            train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoch_size, batch_size, sampler, writer, args.local_rank, n_workers, optim_step, amp_)
-        except KeyboardInterrupt:
-            print('Exiting before finishing epoch', epoch, 'out of', epochs)
-            break
+        train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoch_size, batch_size, sampler, writer, args.local_rank, n_workers, optim_step, amp_)
 
-        val_dataset.reset(1, seed)
-        model.eval()
-        try:
-            validate(model, val_dataset, epoch, criterion, batch_size, writer, args.local_rank)
-        except KeyboardInterrupt:
-            break
 
-    torch.save(model.state_dict(), path_to_save)
+        if args.local_rank == 0:
+            model.eval()
+            loss = validate(model, val_dataset, epoch, criterion, min(2*batch_size, 64), writer, args.local_rank)
+
+            if loss < best_loss:
+                to_save = { 'epoch': epoch,
+                            'variant': variant,
+                            'model_name': model_name,
+                            'model_state_dict': model.state_dict(),
+                            'best_loss': loss,}
+
+                torch.save(to_save, path_to_save)
 
 
 def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoch_size, batch_size, sampler, writer, local_rank, n_workers, optim_step, amp_):
@@ -167,8 +174,8 @@ def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoc
         fake_loss = F.binary_cross_entropy_with_logits(outputs[fake_idx], labels[fake_idx]).item() if fake_idx.size(0) > 0 else 0.
         real_loss = F.binary_cross_entropy_with_logits(outputs[real_idx], labels[real_idx]).item() if real_idx.size(0) > 0 else 0.
 
-        f_losses.update(fake_loss, fake_idx.size(0))
-        r_losses.update(real_loss, real_idx.size(0))
+        f_losses.update(fake_loss, fake_idx.size(0) if fake_idx.size(0) > 0 else 1)
+        r_losses.update(real_loss, real_idx.size(0) if real_idx.size(0) > 0 else 1)
 
         if scheduler['mode'] == 'iteration':
             scheduler['scheduler'].step()
@@ -207,18 +214,21 @@ def validate(model, dataset, epoch, criterion, batch_size, writer, local_rank):
             losses.update(loss.item(), outputs.size(0))
 
             fake_idx = labels > .5
-            prist_idx = labels < .5
+            real_idx = labels < .5
 
-            fake_loss = F.binary_cross_entropy_with_logits(outputs[fake_idx], labels[fake_idx]) if fake_idx.size(0) > 0 else 0.
-            real_loss = F.binary_cross_entropy_with_logits(outputs[prist_idx], labels[prist_idx]) if prist_idx.size(0) > 0 else 0.
+            fake_loss = F.binary_cross_entropy_with_logits(outputs[fake_idx], labels[fake_idx]).item() if fake_idx.size(0) > 0 else 0.
+            real_loss = F.binary_cross_entropy_with_logits(outputs[real_idx], labels[real_idx]).item() if real_idx.size(0) > 0 else 0.
 
-            f_losses.update(fake_loss.item(), fake_idx.size(0))
-            r_losses.update(real_loss.item(), prist_idx.size(0))
+            f_losses.update(fake_loss, fake_idx.size(0) if fake_idx.size(0) > 0 else 1)
+            r_losses.update(real_loss, real_idx.size(0) if real_idx.size(0) > 0 else 1)
 
-        if local_rank == 0:
+        if local_rank ==0:
+
             writer.add_scalar('Validation/Total Loss', losses.avg, global_step = epoch)
             writer.add_scalar('Validation/Fake Loss - val', f_losses.avg, global_step=epoch)
             writer.add_scalar('Validation/Real Loss - val', r_losses.avg, global_step=epoch)
+
+        return losses.avg
 
 if __name__ == '__main__':
 

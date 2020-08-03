@@ -12,7 +12,7 @@ class FocalLoss(nn.Module):
     def forward(self, inputs, targets):
 
         if self.reduce:
-            BCE_Loss = F.binary_cross_entropy(inputs, targets.float(), reduction='mean')
+            BCE_Loss = F.binary_cross_entropy_with_logits(inputs, targets.float(), reduction='mean')
         else:
             BCE_Loss = F.binary_cross_entropy(inputs, targets.float(), reduction=None)
 

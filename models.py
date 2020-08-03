@@ -4,12 +4,12 @@ from pretrainedmodels.models.inceptionv4 import inceptionv4
 from pretrainedmodels.models.xception import xception, pretrained_settings
 from efficientnet_pytorch import EfficientNet
 from RegNet import regnety
+from focal_loss import FocalLoss
 
 models_info = {'efficientnet-b3': {
                     'normalization': {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
                     'input_resize': 300,
                     'num_features' : 1536,
-
                 },
                'efficientnet-b5': {
                     'normalization': {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
@@ -40,7 +40,7 @@ models_info = {'efficientnet-b3': {
             }
 
 
-class Model(torch.nn.Module):
+class  HelperModel(torch.nn.Module):
     def __init__(self, encoder, num_features, out_classes, dropout_rate=0.0) -> None:
         super().__init__()
         self.encoder = encoder
@@ -57,37 +57,41 @@ class Model(torch.nn.Module):
         return x
 
 
-def load_saved_model(path_to_mode, model_name):
-    # TODO: Given name and path to model, load saved model
-    pass
+def load_saved_model(path_to_model):
+
+    saved = torch.load(path_to_model)
+
+    model, _, _, _, _, _, _ = load_config(saved['model_name'], saved['variant'], 10, 10)
+
+    model.load_state_dict(saved['model_state_dict'])
+
+    return model, saved['model_name'], saved['best_loss'], saved['epoch']
 
 def load_config(name, variant, n_epochs, epoch_size):
 
-    num_classes = 1 if variant < 1 else 2
-
-    cast = 'torch.LongTensor' if num_classes == 1 else 'torch.FloatTensor'
-
+    # Just use BCE & FocalLoss
+    num_classes = 1
 
     if name == 'efficientnet-b3':
 
         encoder = efficientnet.tf_efficientnet_b3_ns(pretrained=True, drop_path_rate=0.2)
         normalization = models_info[name]['normalization']
         resize = models_info[name]['input_resize']
-        model = Model(encoder, models_info[name]['num_features'], num_classes)
+        model = HelperModel(encoder, models_info[name]['num_features'], num_classes)
 
     if name == 'efficientnet-b5':
 
         encoder = efficientnet.tf_efficientnet_b5_ns(pretrained=True, drop_path_rate=0.2)
         normalization = models_info[name]['normalization']
         resize = models_info[name]['input_resize']
-        model = Model(encoder, models_info[name]['num_features'], num_classes)
+        model = HelperModel(encoder, models_info[name]['num_features'], num_classes)
 
     if name == 'efficientnet-b7':
 
         encoder = efficientnet.tf_efficientnet_b7_ns(pretrained=True, drop_path_rate=0.2)
         normalization = models_info[name]['normalization']
         resize = models_info[name]['input_resize']
-        model = Model(encoder, models_info[name]['num_features'], num_classes)
+        model = HelperModel(encoder, models_info[name]['num_features'], num_classes)
 
     elif name == 'xception':
 
@@ -95,7 +99,7 @@ def load_config(name, variant, n_epochs, epoch_size):
         encoder.forward_features = encoder.features
         normalization = models_info[name]['normalization']
         resize = models_info[name]['input_resize']
-        model = Model(encoder, models_info[name]['num_features'], num_classes)
+        model = HelperModel(encoder, models_info[name]['num_features'], num_classes)
 
     elif name == 'inceptionv4':
 
@@ -103,7 +107,7 @@ def load_config(name, variant, n_epochs, epoch_size):
         encoder.forward_features = encoder.features
         normalization = models_info[name]['normalization']
         resize = models_info[name]['input_resize']
-        model = Model(encoder, models_info[name]['num_features'], num_classes)
+        model = HelperModel(encoder, models_info[name]['num_features'], num_classes)
 
     elif name == 'regnety-1.6GF':
 
@@ -114,33 +118,58 @@ def load_config(name, variant, n_epochs, epoch_size):
 
     if variant == 0:
 
-        '''
-            Variant 0 has no weighted BCE, with SGD and epoch-updated LR.
-        '''
+        lr = 0.005
 
-        criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(0.75).cuda())
-        optimizer = torch.optim.SGD(model.parameters(), lr=0.005, momentum=0.9, weight_decay=1e-4, nesterov=True)
+        criterion = torch.nn.BCEWithLogitsLoss()
+        optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4, nesterov=True)
         scheduler = {'scheduler': torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda= lambda x : (n_epochs*epoch_size - x) / (n_epochs*epoch_size)),
                      'mode': 'iteration'}
 
+        desc = {'model_name' : name,
+                'epochs' : str(n_epochs),
+                'epoch_size': str(epoch_size),
+                'Loss function': 'BCE-No weighted',
+                'optim': 'SGD + momentum=.9 + weight_decay=1e-4 + nesterov',
+                'initial_lr': str(lr),
+                'secheduler': 'lambda with iteration step'}
+
+
     elif variant == 1:
 
-        '''
-            Variant 1 has weighted BCE (1 * real + 0.75 * fake), with SGD and Lambda scheduler 
-        '''
+        lr = 0.005
 
         criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(0.75).cuda())
         optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4, nesterov=True)
-        scheduler = {'scheduler': torch.optim.lr_scheduler.StepLR(optimizer, step_size= n_epochs // 3),
-                     'mode': 'epoch'}
+        scheduler = {'scheduler': torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: (n_epochs * epoch_size - x) / (n_epochs * epoch_size)),
+                     'mode': 'iteration'}
+
+        desc = {'model_name' : name,
+                'epochs' : str(n_epochs),
+                'epoch_size': str(epoch_size),
+                'Loss function': 'BCE-1*real+0.75*fake',
+                'optim': 'SGD + momentum=.9 + weight_decay=1e-4 + nesterov',
+                'initial_lr': str(lr),
+                'secheduler': 'lambda with iteration step'}
+
     else:
-        # Implement Focal-Loss
-        criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor(0.75).cuda())
-        optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4, nesterov=True)
-        scheduler = {'scheduler': torch.optim.lr_scheduler.StepLR(optimizer, step_size=n_epochs // 3),
-                     'mode': 'epoch'}
 
-    return model, resize, criterion, optimizer, scheduler, normalization, cast
+        lr = 0.005
+
+        # Implement Focal-Loss
+        criterion = FocalLoss()
+        optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4, nesterov=True)
+        scheduler = {'scheduler': torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: (n_epochs * epoch_size - x) / (n_epochs * epoch_size)),
+                     'mode': 'iteration'}
+
+        desc = {'model_name': name,
+                'epochs': str(n_epochs),
+                'epoch_size': str(epoch_size),
+                'Loss function': 'FocalLoss',
+                'optim': 'SGD + momentum=.9 + weight_decay=1e-4 + nesterov',
+                'initial_lr': str(lr),
+                'secheduler': 'lambda with iteration step'}
+
+    return model, resize, criterion, optimizer, scheduler, normalization, desc
 
 
 def get_available_models():

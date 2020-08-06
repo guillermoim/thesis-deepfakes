@@ -11,9 +11,9 @@ from tqdm import tqdm
 from utils import DataAugmentationTransforms as DAT, AverageMeter
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from training.datasets.classifier_dataset import DeepFakeClassifierDataset
 from apex.parallel import DistributedDataParallel, convert_syncbn_model
 from torchvision import transforms
+from data_loader import get_loader, read_dataset, CompositeDataset
 
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
@@ -86,35 +86,34 @@ def main():
         model = torch.nn.DataParallel(model).cuda()
 
     # Generate tensorboard metrics report.
-    writer = SummaryWriter(f'runs/{model_name}_v{variant}_{seed}', flush_secs=15)
+    writer = SummaryWriter(f'runs/{model_name}-tum_DA_v{variant}_{seed}', flush_secs=15)
 
     if args.local_rank == 0:
         writer.add_text('Description', str(desc), global_step=0)
 
     # Initialize datasets
-    dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path=f'{data_path}', hardcore=True, normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=3, transforms=DAT.create_train_transforms(resize))
 
-    val_dataset = DeepFakeClassifierDataset(crops_dir='crops',  data_path=f'{data_path}', mode='val', normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=3, reduce_val=True, transforms=DAT.create_val_transforms(resize))
-    val_dataset.reset(1, seed)
+
+    train, _, _ = read_training_dataset(data_path, DAT.create_train_transforms(resize), normalization=normalization)
+    _, val, _ = read_training_dataset(data_path, DAT.create_val_transforms(resize), normalization=normalization)
+    del _
 
     for epoch in range(epochs):
 
         model.train()
 
-        dataset.reset(epoch, seed)
-
         if distributed:
-            sampler = torch.utils.data.distributed.DistributedSampler(dataset)
+            sampler = torch.utils.data.distributed.DistributedSampler(train)
             sampler.set_epoch(epoch)
         else:
             sampler = None
 
-        train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoch_size, batch_size, sampler, writer, args.local_rank, n_workers, optim_step, amp_)
-
+        train_iteration(model, train, criterion, optimizer, scheduler, epoch, epoch_size, batch_size, sampler, writer, args.local_rank, n_workers, optim_step, amp_)
 
         if args.local_rank == 0:
             model.eval()
-            loss = validate(model, val_dataset, epoch, criterion, min(2*batch_size, 64), writer, args.local_rank)
+
+            loss = validate(model, val, epoch, criterion, min(2*batch_size, 64), writer, args.local_rank)
 
             if loss < best_loss:
                 to_save = { 'epoch': epoch,
@@ -136,19 +135,13 @@ def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoc
 
     optimizer.zero_grad()
 
-    for idx, (data) in enumerate(tqdm(loader, desc=f'Epoch {epoch}: lr: {scheduler["scheduler"].get_lr()}', total=epoch_size)):
+    for idx, (video_ids, frame_ids, images, targets) in enumerate(tqdm(loader, desc=f'Epoch {epoch}: lr: {scheduler["scheduler"].get_lr()}', total=epoch_size)):
 
-        inputs, labels = data['image'].cuda(), data['labels'].float().cuda()
+        inputs, labels = images.cuda(), targets.float().cuda()
 
-        valid_idx = data["valid"].float().cuda() > 0
+        #valid_idx = data["valid"].float().cuda() > 0
 
         outputs = model(inputs)
-
-        outputs = outputs[valid_idx]
-        labels = labels[valid_idx]
-
-        if labels.size(0) < 1:
-            continue
 
         loss = criterion(outputs, labels)
 
@@ -171,11 +164,11 @@ def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoc
         fake_idx = labels > .5
         real_idx = labels < .5
 
-        fake_loss = F.binary_cross_entropy_with_logits(outputs[fake_idx], labels[fake_idx]).item() if fake_idx.size(0) > 0 else 0.
-        real_loss = F.binary_cross_entropy_with_logits(outputs[real_idx], labels[real_idx]).item() if real_idx.size(0) > 0 else 0.
+        fake_loss = F.binary_cross_entropy_with_logits(outputs[fake_idx], labels[fake_idx]).item() if fake_idx.any() else 0.
+        real_loss = F.binary_cross_entropy_with_logits(outputs[real_idx], labels[real_idx]).item() if real_idx.any() else 0.
 
-        f_losses.update(fake_loss, fake_idx.size(0) if fake_idx.size(0) > 0 else 1)
-        r_losses.update(real_loss, real_idx.size(0) if real_idx.size(0) > 0 else 1)
+        f_losses.update(fake_loss, fake_idx.size(0) if fake_idx.any() > 0 else 0)
+        r_losses.update(real_loss, real_idx.size(0) if real_idx.any() > 0 else 0)
 
         if scheduler['mode'] == 'iteration':
             scheduler['scheduler'].step()
@@ -202,11 +195,11 @@ def validate(model, dataset, epoch, criterion, batch_size, writer, local_rank):
 
     with torch.no_grad():
 
-        for data in tqdm(loader):
+        for idx, data in enumerate(tqdm(loader, desc=f'Validation epoch {epoch} - local_rank={local_rank}')):
 
             # Get the inputs and labels
-            inputs, labels, img_name, valid, rotations = [*data.values()]
-            inputs, labels = inputs.cuda(), labels.float().cuda()
+            video_ids, frame_ids, images, targets = data
+            inputs, labels = images.cuda(), targets.float().cuda()
             outputs = model(inputs)
             loss = criterion(outputs, labels)
 
@@ -216,19 +209,46 @@ def validate(model, dataset, epoch, criterion, batch_size, writer, local_rank):
             fake_idx = labels > .5
             real_idx = labels < .5
 
-            fake_loss = F.binary_cross_entropy_with_logits(outputs[fake_idx], labels[fake_idx]).item() if fake_idx.size(0) > 0 else 0.
-            real_loss = F.binary_cross_entropy_with_logits(outputs[real_idx], labels[real_idx]).item() if real_idx.size(0) > 0 else 0.
+            fake_loss = F.binary_cross_entropy_with_logits(outputs[fake_idx], labels[fake_idx]).item() if fake_idx.any() else 0.
+            real_loss = F.binary_cross_entropy_with_logits(outputs[real_idx], labels[real_idx]).item() if real_idx.any() else 0.
 
-            f_losses.update(fake_loss, fake_idx.size(0) if fake_idx.size(0) > 0 else 1)
-            r_losses.update(real_loss, real_idx.size(0) if real_idx.size(0) > 0 else 1)
+            f_losses.update(fake_loss, fake_idx.size(0) if fake_idx.any() > 0 else 0)
+            r_losses.update(real_loss, real_idx.size(0) if real_idx.any() > 0 else 0)
 
         if local_rank ==0:
-
             writer.add_scalar('Validation/Total Loss', losses.avg, global_step = epoch)
             writer.add_scalar('Validation/Fake Loss - val', f_losses.avg, global_step=epoch)
             writer.add_scalar('Validation/Real Loss - val', r_losses.avg, global_step=epoch)
 
         return losses.avg
+
+
+def read_training_dataset(data_dir, transform, normalization, max_images_per_video=10, max_videos=10000, window_size=1, splits_path='ff_splits'):
+
+    datasets = read_dataset(data_dir, normalization = normalization, transform=transform, max_images_per_video=max_images_per_video, max_videos=max_videos,
+                            window_size=window_size, splits_path=splits_path)
+
+    # only neural textures and original
+    datasets = {
+        k: v for k, v in datasets.items()
+        if 'original' in k or 'neural' in k
+    }
+    print('Using training data: ')
+    print('\n'.join(sorted(datasets.keys())))
+
+    trains, vals, tests = [], [], []
+    for data_dir_name, dataset in datasets.items():
+        train, val, test = dataset
+        # repeat original data multiple times to balance out training data
+        compression = data_dir_name.split('_')[-1]
+        num_tampered_with_same_compression = len({x for x in datasets.keys() if compression in x}) - 1
+        count = 1 if 'original' not in data_dir_name else num_tampered_with_same_compression
+        for _ in range(count):
+            trains.append(train)
+        vals.append(val)
+        tests.append(test)
+    return CompositeDataset(*trains), CompositeDataset(*vals), CompositeDataset(*tests)
+
 
 if __name__ == '__main__':
 

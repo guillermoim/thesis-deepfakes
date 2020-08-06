@@ -46,7 +46,7 @@ class  HelperModel(torch.nn.Module):
         self.encoder = encoder
         self.avg_pool = torch.nn.AdaptiveAvgPool2d((1, 1))
         self.dropout = torch.nn.Dropout(dropout_rate)
-        self.fc = torch.nn.Linear(num_features, out_classes, bias=True)
+        self.fc = torch.nn.Linear(num_features, out_classes, bias=False)
 
 
     def forward(self, x):
@@ -112,13 +112,13 @@ def load_config(name, variant, n_epochs, epoch_size):
     elif name == 'regnety-1.6GF':
 
         model = regnety('1.6GF')
-        model.head.fc = torch.nn.Linear(models_info[name]['num_features'], num_classes)
+        model.head.fc = torch.nn.Linear(models_info[name]['num_features'], num_classes, bias=False)
         resize = models_info[name]['input_resize']
         normalization = models_info[name]['normalization']
 
     if variant == 0:
 
-        lr = 0.005
+        lr = 0.01
 
         criterion = torch.nn.BCEWithLogitsLoss()
         optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4, nesterov=True)

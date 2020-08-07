@@ -171,11 +171,11 @@ def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoc
         fake_idx = labels > .5
         real_idx = labels < .5
 
-        fake_loss = F.binary_cross_entropy_with_logits(outputs[fake_idx], labels[fake_idx]).item() if fake_idx.size(0) > 0 else 0.
-        real_loss = F.binary_cross_entropy_with_logits(outputs[real_idx], labels[real_idx]).item() if real_idx.size(0) > 0 else 0.
+        fake_loss = F.binary_cross_entropy_with_logits(outputs[fake_idx], labels[fake_idx]).item() if fake_idx.any() else 0.
+        real_loss = F.binary_cross_entropy_with_logits(outputs[real_idx], labels[real_idx]).item() if real_idx.any() else 0.
 
-        f_losses.update(fake_loss, fake_idx.size(0) if fake_idx.size(0) > 0 else 1)
-        r_losses.update(real_loss, real_idx.size(0) if real_idx.size(0) > 0 else 1)
+        f_losses.update(fake_loss, fake_idx.size(0) if fake_idx.any() > 0 else 0)
+        r_losses.update(real_loss, real_idx.size(0) if real_idx.any() > 0 else 0)
 
         if scheduler['mode'] == 'iteration':
             scheduler['scheduler'].step()
@@ -216,11 +216,11 @@ def validate(model, dataset, epoch, criterion, batch_size, writer, local_rank):
             fake_idx = labels > .5
             real_idx = labels < .5
 
-            fake_loss = F.binary_cross_entropy_with_logits(outputs[fake_idx], labels[fake_idx]).item() if fake_idx.size(0) > 0 else 0.
-            real_loss = F.binary_cross_entropy_with_logits(outputs[real_idx], labels[real_idx]).item() if real_idx.size(0) > 0 else 0.
+            fake_loss = F.binary_cross_entropy_with_logits(outputs[fake_idx], labels[fake_idx]).item() if fake_idx.any() else 0.
+            real_loss = F.binary_cross_entropy_with_logits(outputs[real_idx], labels[real_idx]).item() if real_idx.any() else 0.
 
-            f_losses.update(fake_loss, fake_idx.size(0) if fake_idx.size(0) > 0 else 1)
-            r_losses.update(real_loss, real_idx.size(0) if real_idx.size(0) > 0 else 1)
+            f_losses.update(fake_loss, fake_idx.size(0) if fake_idx.any() > 0 else 0)
+            r_losses.update(real_loss, real_idx.size(0) if real_idx.any() > 0 else 0)
 
         if local_rank ==0:
 

@@ -23,30 +23,35 @@ torch.backends.cudnn.benchmark = True
 
 
 def main():
-
     parser = argparse.ArgumentParser(description='Train a model with the parameters specified.')
 
-    parser.add_argument('-s', '-seed', type=int, default=0, help='Specify manual seed')
-    parser.add_argument('-m', '-model', choices=models.get_available_models(),
-                        type=str, default='effnet-b5', help='Specify the type of model to train')
-    parser.add_argument('-v', '-variant', choices=[0, 1, 2], type=int, default=0,
-                        help='Especificar variante de entrenamiento 0, 1 or 2')
+    parser.add_argument('--seed', type=int, default=101, help='Specify manual seed')
+    parser.add_argument('--model', choices=models.get_available_models(),
+                        type=str, default='efficientnet-b3', help='Specify the type of model to train')
+    parser.add_argument('--v', '-variant', choices=[0, 1, 2], type=int, default=0,
+                        help='Specify training variant')
     parser.add_argument('-epochs', type=int, default=30, help='Total number of epochs')
-    parser.add_argument('-epoch_size', type=int, default=2500, help='Size (in num of batches) of each epoch')
-    parser.add_argument('-batch_size', type=int, default=42, help='Batch size')
+    parser.add_argument('-epoch_size', type=int, default=1200, help='Size (in num of batches) of each epoch')
+    parser.add_argument('-batch_size', type=int, default=8, help='Batch size')
     parser.add_argument('--local_rank', type=int, required=True, default=0)
-    parser.add_argument('--ngpu', type=int, default=1, required=True, help='Number of GPUs')
+    parser.add_argument('--ngpu', type=int, required=True, help='Number of GPUs')
     parser.add_argument('--n_workers', type=int, default=0, help='Number of workers for the DataLoader')
-    parser.add_argument('--optim_step', type=int, default=1, help='Specify the number of iterations before optimizer updates')
-    parser.add_argument('--distributed', type=bool, default=True, help='Specify whether to use Distributed Model or not')
-    parser.add_argument('--amp', type=bool, default=False, help='Specify whether to use Nvidia Automatic Mixed Precision or not')
-    parser.add_argument('--data_path', type=str, default='../data', help='Specify path to data.')
+    parser.add_argument('--optim_step', type=int, default=1,
+                        help='Specify the number of iterations before optimizer updates')
+    parser.add_argument('--distributed', action='store_true',
+                        help='Specify whether to use Distributed Model or not')
+    parser.add_argument('--amp', action='store_true',
+                        help='Specify whether to use Nvidia Automatic Mixed Precision or not')
+    parser.add_argument('--data_path', type=str, default='../datasets/mtcnn', help='Specify path to data.')
+
+    parser.add_argument('--data_augment', choices=['no_da', 'simple_da', 'occlusions_da', 'cutout_da'],
+                        type=str, default='cutout_da', help='Specify training variant')
 
     args = parser.parse_args()
 
     # Load the arguments
-    seed = args.s
-    model_name = args.m
+    seed = args.seed
+    model_name = args.model
     variant = args.v
     epochs = args.epochs
     epoch_size = args.epoch_size
@@ -56,8 +61,10 @@ def main():
     distributed = args.distributed
     amp_ = args.amp
     data_path = args.data_path
+    data_augment = args.data_augment
 
-    path_to_save = f'models/{model_name}_{seed}_v{variant}.pth'
+    execution_id = f'{model_name}-tum_{data_augment}_v{variant}_{seed}'
+    path_to_save = f'models/{execution_id}.pth'
 
     assert distributed or not amp_, "Mixed precision only allowed in distributed training mode."
 
@@ -86,7 +93,7 @@ def main():
         model = torch.nn.DataParallel(model).cuda()
 
     # Generate tensorboard metrics report.
-    writer = SummaryWriter(f'runs/{model_name}_v{variant}_{seed}', flush_secs=15)
+    writer = SummaryWriter(f'runs/{execution_id}', flush_secs=15)
 
     if args.local_rank == 0:
         writer.add_text('Description', str(desc), global_step=0)

@@ -3,9 +3,10 @@ import numpy as np
 
 from torchvision import transforms
 from datasets.ff_dataset import get_loader, read_dataset, CompositeDataset
-from datasets.transforms_bank import IsotropicResize, RemoveLandmark, BlackoutConvexHull, RandomCutout
-from albumentations import Compose, RandomBrightnessContrast, \
-    HorizontalFlip, FancyPCA, HueSaturationValue, OneOf, ToGray, \
+from datasets.transforms_bank import IsotropicResize, RemoveLandmark, BlackoutConvexHull, RandomCutout, ColorJitter, \
+    RandomPerspective
+from albumentations import Compose, RandomBrightnessContrast, VerticalFlip, \
+    HorizontalFlip, FancyPCA, HueSaturationValue, OneOf, ToGray, RandomResizedCrop, \
     ShiftScaleRotate, ImageCompression, PadIfNeeded, GaussNoise, GaussianBlur, NoOp
 
 
@@ -81,8 +82,6 @@ class DataAugmentationTransforms:
         :return: Composition of transformations via albumentations
         '''
 
-
-
         # TODO: The following must go on a OneOf. Set p = 0 in case input argument is set to False
 
         rm_ld = RemoveLandmark() if landmarks_blackout else NoOp()
@@ -123,23 +122,57 @@ class DataAugmentationTransforms:
         return Compose(transformations)
 
 
-def create_train_transforms(size=300, option='no_da', shift_limit=0.1, scale_limit=0.2, rotate_limit = 10):
+def create_train_transforms(size=300, option='no_da', shift_limit=0.1, scale_limit=0.2, rotate_limit = 10, dataset='faceforensics'):
 
     assert option in ('no_da', 'simple_da', 'occlusions_da', 'cutout_da'),\
         "option must be one of ('no_da', 'simple_da', 'occlusions_da', 'cutout_da')"
 
-    if option == 'no_da':
-        return DataAugmentationTransforms.create_val_transforms(size)
+    assert dataset in ('faceforensics', 'dfdc', 'other'), "Dataset not recognized"
 
-    elif option == 'simple_da':
-        return DataAugmentationTransforms.create_train_transforms(size=size, shift_limit=shift_limit,
-                                                                  scale_limit=scale_limit, rotate_limit=rotate_limit,
-                                                                  landmarks_blackout=False, cutout=False,
-                                                                  convex_hull_blackout = False)
-    elif option == 'occlusions_da':
-        return DataAugmentationTransforms.create_train_transforms(size=size, shift_limit=shift_limit,
-                                                                  scale_limit=scale_limit, rotate_limit=rotate_limit,
-                                                                  cutout=False)
-    else:
-        return DataAugmentationTransforms.create_train_transforms(size=size, shift_limit=shift_limit,
-                                                                  scale_limit=scale_limit, rotate_limit=rotate_limit)
+
+    trans = []
+
+
+    if option == 'no_da' and dataset in ('faceforensics', 'dfdc'):
+
+        trans.append(IsotropicResize(max_side=size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC))
+        trans.append(PadIfNeeded(min_height=size, min_width=size, border_mode=cv2.BORDER_CONSTANT))
+
+    elif dataset in ('faceforensics', 'dfdc'):
+        trans.append(HorizontalFlip())
+        trans.append(OneOf([
+                    IsotropicResize(max_side=size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC),
+                    IsotropicResize(max_side=size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_LINEAR),
+                    IsotropicResize(max_side=size, interpolation_down=cv2.INTER_LINEAR, interpolation_up=cv2.INTER_LINEAR),
+                ], p=1))
+
+        trans.append(PadIfNeeded(min_height=size, min_width=size, border_mode=cv2.BORDER_CONSTANT))
+        trans.append(OneOf([RandomBrightnessContrast(), FancyPCA(), HueSaturationValue()], p=0.5))
+        trans.append(ToGray(p=0.2))
+        trans.append(ShiftScaleRotate(shift_limit=shift_limit, scale_limit=scale_limit, rotate_limit=rotate_limit, border_mode=cv2.BORDER_CONSTANT, p=0.5))
+
+        if dataset == 'dfdc':
+            trans.insert(0, GaussianBlur(blur_limit=3, p=0.05))
+            trans.insert(0, GaussNoise(p=0.1))
+            trans.insert(0, ImageCompression(quality_lower=60, quality_upper=100, p=0.5))
+
+    if option != 'no_da':
+        rm_ld = RemoveLandmark() if (option == 'occlusions_da' or option == 'cutout_da') else NoOp()
+        bo_ch = BlackoutConvexHull() if (option == 'occlusions_da' or option == 'cutout_da') else NoOp()
+        co = RandomCutout() if option == 'cutout_da' else NoOp()
+
+        total_black_out = OneOf([rm_ld, bo_ch, co], p=1)
+
+        trans.insert(0, total_black_out)
+
+    if not dataset in ('dfdc', 'faceforensics'):
+
+        trans.append(HorizontalFlip())
+        trans.append(VerticalFlip())
+        trans.append(ShiftScaleRotate(shift_limit=0, scale_limit=0, rotate_limit=60, border_mode=cv2.BORDER_CONSTANT, p=0.5))
+        trans.append(RandomResizedCrop(size, size, scale=(0.08, 1.0), ratio=(0.75, 1.3333333333333333), interpolation=2))
+        trans.append(RandomPerspective())
+        trans.append(ColorJitter())
+
+    return Compose(trans)
+

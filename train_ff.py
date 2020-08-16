@@ -48,6 +48,9 @@ def main():
     parser.add_argument('--data_augment', choices=['no_da', 'simple_da', 'occlusions_da', 'cutout_da'],
                         type=str, default='cutout_da', help='Specify training variant')
 
+    parser.add_argument('--da_dataset', choices=['faceforensics', 'dfdc', 'other'],
+                        type=str, default='faceforensics', help='Specify type of base data augmentation transformations.')
+
     args = parser.parse_args()
 
     # Load the arguments
@@ -63,9 +66,10 @@ def main():
     amp_ = args.amp
     data_path = args.data_path
     data_augment = args.data_augment
+    da_dataset = args.da_dataset
 
     # Path to save
-    execution_id = f'{model_name}-tum_{data_augment}_v{variant}_{seed}'
+    execution_id = f'{model_name}-tum_{data_augment}_{da_dataset}_v{variant}_{seed}'
     path_to_save = f'models/{execution_id}.pth'
 
     assert distributed or not amp_, "Mixed precision only allowed in distributed training mode."
@@ -101,13 +105,12 @@ def main():
     if args.local_rank == 0:
         writer.add_text('Description', str(desc), global_step=0)
 
-    # Initialize datasets
 
+    train_transform = create_train_transforms(resize, option=data_augment, dataset=da_dataset,
+                                              shift_limit=.01, scale_limit=.05, rotate_limit=5,)
     # Train split containing both raw, c23 and c40
-    train, _, _ = read_training_dataset(data_path,
-                                        create_train_transforms(
-                                            resize, option=data_augment, shift_limit=.01, scale_limit=.05, rotate_limit=5,
-                                        ), max_videos = 10000, max_images_per_video=10, normalization=normalization)
+    train, _, _ = read_training_dataset(data_path, train_transform,
+                                        max_videos = 1000, max_images_per_video=10, normalization=normalization)
 
     # For validation, different levels of compression go separately.
     raw_val = c23_val = c40_val = None
@@ -151,11 +154,12 @@ def main():
 
             model.eval()
 
-            c23_loss = validate(model, val_datasets, 'c23', epoch, min(2 * batch_size, 64), writer, args.local_rank, execution_id)
-            c40_loss = validate(model, val_datasets, 'c40', epoch, min(2*batch_size, 64), writer, args.local_rank, execution_id)
-            raw_loss = validate(model, val_datasets, 'raw', epoch, min(2 * batch_size, 64), writer, args.local_rank, execution_id)
+            c23_loss = validate(model, val_datasets, 'c23', epoch, batch_size, writer, args.local_rank, execution_id)
+            c40_loss = validate(model, val_datasets, 'c40', epoch, batch_size, writer, args.local_rank, execution_id)
+            raw_loss = validate(model, val_datasets, 'raw', epoch, batch_size, writer, args.local_rank, execution_id)
 
             if np.mean((c23_loss, c40_loss, raw_loss)) < best_loss:
+                print('Saving checkpoint at epoch', epoch , '!!')
                 to_save = { 'epoch': epoch,
                             'variant': variant,
                             'model_name': model_name,
@@ -279,7 +283,7 @@ def validate(model, datasets, key, epoch, batch_size, writer, local_rank, execut
         if local_rank ==0:
             writer.add_scalar(f'Validation-{key}/Loss/BCE Total Loss', losses.avg, global_step = epoch)
             writer.add_scalar(f'Validation-{key}/Loss/BCE Fake Loss', f_losses.avg, global_step=epoch)
-            writer.add_scalar(f'Validation-{key}/Loss/Real Loss', r_losses.avg, global_step=epoch)
+            writer.add_scalar(f'Validation-{key}/Loss/BCE Real Loss', r_losses.avg, global_step=epoch)
 
             ppt = torch.cat(pairs_prob_and_target, dim=1)
 

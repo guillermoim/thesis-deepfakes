@@ -4,7 +4,9 @@ import cv2
 import dlib
 import numpy as np
 import skimage.draw
+import torchvision.transforms
 
+from PIL import Image
 from skimage import measure
 from albumentations import DualTransform, ImageOnlyTransform
 from scipy.ndimage import binary_erosion, binary_dilation
@@ -227,6 +229,37 @@ class RandomCutout(ImageOnlyTransform):
         label = params['label']
 
         return {'mask': mask, 'label': label}
+
+    def get_transform_init_args_names(self):
+        return ()
+
+class ColorJitter(ImageOnlyTransform):
+
+    def __init__(self, always_apply=True, p=1, brightness=0.4, contrast=0.4, saturation=0.4, hue=0.2):
+        super().__init__(always_apply, p)
+        self.brightness = brightness
+        self.contrast = contrast
+        self.saturation = saturation
+        self.hue = hue
+
+    def apply(self, image, **params):
+        T = torchvision.transforms.ColorJitter(self.brightness, self.contrast, self.saturation, self.hue)
+        image = Image.fromarray(image)
+        return np.asarray(T(image), dtype=np.uint8)
+
+    def get_transform_init_args_names(self):
+        return ()
+
+class RandomPerspective(ImageOnlyTransform):
+
+    def __init__(self, always_apply=False, p=0.5, distortion_scale=0.5):
+        super().__init__(always_apply, p)
+        self.distortion_scale = distortion_scale
+
+    def apply(self, image, **params):
+        T = torchvision.transforms.RandomPerspective(distortion_scale=self.distortion_scale, p=self.p)
+        image = Image.fromarray(image)
+        return np.asarray(T(image), dtype=np.uint8)
 
     def get_transform_init_args_names(self):
         return ()

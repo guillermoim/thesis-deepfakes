@@ -37,13 +37,14 @@ class DeepFakeTrainingDataset(Dataset):
                  folds_csv="folds.csv",
                  normalize={"mean": [0.485, 0.456, 0.406],
                             "std": [0.229, 0.224, 0.225]},
+                 mode='train',
                  reduce_val=True,
                  oversample_real=True,
-                 transforms=None
+                 transforms=None,
+                 test = 11
                  ):
         super().__init__()
         self.data_root = data_path
-        self.fold = fold
         self.folds_csv = folds_csv
         self.padding_part = padding_part
         self.hardcore = hardcore
@@ -54,15 +55,17 @@ class DeepFakeTrainingDataset(Dataset):
         self.df = pd.read_csv(self.folds_csv)
         self.oversample_real = oversample_real
         self.reduce_val = reduce_val
-        self.mode = "train"
+        self.mode = mode
+        self.fold = fold
+        self.test = test
 
     def __getitem__(self, index: int):
 
         while True:
             video, img_file, label, ori_video, frame, fold = self.data[index]
             try:
-
-                label = np.clip(label, self.label_smoothing, 1 - self.label_smoothing)
+                if self.mode == 'train':
+                    label = np.clip(label, self.label_smoothing, 1 - self.label_smoothing)
                 img_path = os.path.join(self.data_root, self.crops_dir, video, img_file)
                 image = cv2.imread(img_path, cv2.IMREAD_COLOR)
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -114,15 +117,18 @@ class DeepFakeTrainingDataset(Dataset):
     def _prepare_data(self, epoch, seed):
         df = self.df
         if self.mode == "train":
-            rows = df[df["fold"] != self.fold]
-        else:
+            rows = df[(df["fold"] != self.fold) & (df["fold"] != self.test)]
+        elif self.mode == "val":
             rows = df[df["fold"] == self.fold]
+        else:
+            rows = df[df["fold"] == self.test]
+
         seed = (epoch + 1) * seed
         if self.oversample_real:
             rows = self._oversample(rows, seed)
-        if self.mode == "val" and self.reduce_val:
+        if (self.mode == "val" or self.mode == 'test') and self.reduce_val:
             # every 2nd frame, to speed up validation
-            rows = rows[rows["frame"] % 20 == 0]
+            rows = rows[rows["frame"] % 30 == 0]
             # another option is to use public validation set
             #rows = rows[rows["video"].isin(PUBLIC_SET)]
 

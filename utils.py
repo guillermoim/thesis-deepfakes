@@ -127,7 +127,7 @@ def create_train_transforms(size=300, option='no_da', shift_limit=0.1, scale_lim
     assert option in ('no_da', 'simple_da', 'occlusions_da', 'cutout_da'),\
         "option must be one of ('no_da', 'simple_da', 'occlusions_da', 'cutout_da')"
 
-    assert dataset in ('faceforensics', 'dfdc', 'other'), "Dataset not recognized"
+    assert dataset in ('faceforensics', 'dfdc', 'other', 'other_dfdc'), "Dataset not recognized"
 
 
     trans = []
@@ -165,7 +165,11 @@ def create_train_transforms(size=300, option='no_da', shift_limit=0.1, scale_lim
 
         trans.insert(0, total_black_out)
 
-    if not dataset in ('dfdc', 'faceforensics'):
+    if 'other' in dataset:
+        if 'dfdc' in dataset:
+            trans.insert(0, GaussianBlur(blur_limit=3, p=0.05))
+            trans.insert(0, GaussNoise(p=0.1))
+            trans.insert(0, ImageCompression(quality_lower=60, quality_upper=100, p=0.5))
 
         trans.append(HorizontalFlip())
         trans.append(VerticalFlip())

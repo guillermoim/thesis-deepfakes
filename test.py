@@ -10,6 +10,7 @@ from PIL import Image
 from models import load_saved_model
 from utils import DataAugmentationTransforms as DAT
 from utils import read_training_dataset
+from datasets.dfdc_dataset import DeepFakeTrainingDataset
 from albumentations.pytorch.transforms import img_to_tensor
 
 def get_loader(dataset, normalization, transform):
@@ -26,6 +27,13 @@ def get_loader(dataset, normalization, transform):
         filter_ = lambda x: ('neural' in x or 'original' in x) and 'raw' in x
         _, _, test_dataset = read_training_dataset('../datasets/mtcnn', transform, normalization, filter=filter_,
                                                    max_images_per_video=10, max_videos=10000, window_size=1, splits_path='ff_splits')
+
+
+    if dataset == 'dfdc':
+        test_dataset = DeepFakeTrainingDataset(crops_dir='crops', data_path='../datasets/dfdc', mode='test',
+                                              normalize=normalization, folds_csv=f'../datasets/dfdc/folds.csv', fold=8,
+                                              reduce_val=True, transforms=transform)
+        test_dataset.reset(1, 1)
 
     loader = torch.utils.data.DataLoader(test_dataset, batch_size=16)
     return loader
@@ -52,9 +60,8 @@ def main():
 
     assert os.path.exists(path_to_data), 'Path not valid.'
 
-
     if mode == 'image':
-        assert (path.endswith('.png') or path.endswith('.jpeg')), \
+        assert (path_to_data.endswith('.png') or path_to_data.endswith('.jpeg')), \
             'If image mode is selected then path should point to an image in png or JPEG'
 
     if mode == 'dir':
@@ -70,6 +77,8 @@ def main():
     device = torch.device('cpu' if cpu else 'cuda')
 
     model = model.to(device)
+
+    model.eval()
 
     with torch.no_grad():
 
@@ -91,7 +100,12 @@ def main():
             pairs_prob_and_target = []
 
             for data in tqdm(loader, desc=f'Testing dataset {dataset}...'):
-                video_ids, frame_ids, images, targets = data
+
+                if 'ff' in dataset:
+                    video_ids, frame_ids, images, targets = data
+                else:
+                    images, targets = data['image'].cuda(), data['labels'].float().cuda()
+
                 labels = targets.to(device)
                 outputs = model(images)
                 p = torch.sigmoid(outputs).to(device)
@@ -100,9 +114,9 @@ def main():
 
 
             ppt = torch.cat(pairs_prob_and_target, dim=1)
-            basename = os.path.basename(save_path)
-            os.makedirs(basename)
-            pd.DataFrame(ppt.transpose(1, 0).numpy(), columns=['prob', 'target']).to_csv(save_path, index=False)
+            head, filename = os.path.split(save_path)
+            os.makedirs(os.path.abspath(head))
+            pd.DataFrame(ppt.transpose(1, 0).cpu().numpy(), columns=['prob', 'target']).to_csv(save_path, index=False)
 
         else:
             # TODO: Implement read a directory and predict all images in it.

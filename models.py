@@ -151,20 +151,20 @@ def load_config(name, variant, n_epochs, epoch_size):
 
     elif variant == 1:
 
-        lr = 0.0002
+        lr = 0.01
 
         criterion = torch.nn.BCEWithLogitsLoss()
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr, amsgrad=True)
-        scheduler = {'scheduler': torch.optim.lr_scheduler.StepLR(optimizer, step_size=6),
+        optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4, nesterov=True)
+        scheduler = {'scheduler': torch.optim.lr_scheduler.StepLR(optimizer, step_size=10),
                      'mode': 'epoch'}
 
-        desc = {'model_name' : name,
-                'epochs' : str(n_epochs),
+        desc = {'model_name': name,
+                'epochs': str(n_epochs),
                 'epoch_size': str(epoch_size),
-                'Loss function': 'No weight', #BCE-1*real+0.75*fake',
-                'optim': 'Default Adam',
+                'Loss function': 'BCE-No weighted',
+                'optim': 'SGD + momentum=.9 + weight_decay=1e-4 + nesterov',
                 'initial_lr': str(lr),
-                'secheduler': '0.1 by epoch'}
+                'secheduler': 'lambda with iteration step'}
 
     else:
 

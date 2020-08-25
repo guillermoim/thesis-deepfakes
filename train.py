@@ -8,12 +8,14 @@ import torch.nn.functional as F
 
 from apex import amp
 from tqdm import tqdm
-from utils import DataAugmentationTransforms as DAT, AverageMeter
+from utils import DataAugmentationTransforms as DAT, AverageMeter, create_train_transforms
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from training.datasets.classifier_dataset import DeepFakeClassifierDataset
+from datasets.dfdc_dataset import DeepFakeTrainingDataset
 from apex.parallel import DistributedDataParallel, convert_syncbn_model
 from torchvision import transforms
+from sklearn.metrics import accuracy_score
+
 
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
@@ -30,9 +32,9 @@ def main():
                         type=str, default='efficientnet-b3', help='Specify the type of model to train')
     parser.add_argument('--v', '-variant', choices=[0, 1, 2], type=int, default=0,
                         help='Specify training variant')
-    parser.add_argument('-epochs', type=int, default=30, help='Total number of epochs')
-    parser.add_argument('-epoch_size', type=int, default=1200, help='Size (in num of batches) of each epoch')
-    parser.add_argument('-batch_size', type=int, default=8, help='Batch size')
+    parser.add_argument('--epochs', type=int, default=30, help='Total number of epochs')
+    parser.add_argument('--epoch_size', type=int, default=1200, help='Size (in num of batches) of each epoch')
+    parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
     parser.add_argument('--local_rank', type=int, required=True, default=0)
     parser.add_argument('--ngpu', type=int, required=True, help='Number of GPUs')
     parser.add_argument('--n_workers', type=int, default=0, help='Number of workers for the DataLoader')
@@ -46,6 +48,10 @@ def main():
 
     parser.add_argument('--data_augment', choices=['no_da', 'simple_da', 'occlusions_da', 'cutout_da'],
                         type=str, default='cutout_da', help='Specify training variant')
+
+    parser.add_argument('--da_dataset', choices=['faceforensics', 'dfdc', 'other', 'other_dfdc'],
+                        type=str, default='dfdc',
+                        help='Specify type of base data augmentation transformations.')
 
     args = parser.parse_args()
 
@@ -62,9 +68,11 @@ def main():
     amp_ = args.amp
     data_path = args.data_path
     data_augment = args.data_augment
+    da_dataset = args.da_dataset
 
-    execution_id = f'{model_name}-tum_{data_augment}_v{variant}_{seed}'
-    path_to_save = f'models/{execution_id}.pth'
+
+    execution_id = f'{model_name}-dfdc_{data_augment}_{da_dataset}_v{variant}_{seed}'
+    path_to_save = f'models_dfdc/{execution_id}.pth'
 
     assert distributed or not amp_, "Mixed precision only allowed in distributed training mode."
 
@@ -93,15 +101,17 @@ def main():
         model = torch.nn.DataParallel(model).cuda()
 
     # Generate tensorboard metrics report.
-    writer = SummaryWriter(f'runs/{execution_id}', flush_secs=15)
+    writer = SummaryWriter(f'runs_dfdc/{execution_id}', flush_secs=15)
 
     if args.local_rank == 0:
         writer.add_text('Description', str(desc), global_step=0)
 
-    # Initialize datasets
-    dataset = DeepFakeClassifierDataset(crops_dir='crops', data_path=f'{data_path}', hardcore=True, normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=3, transforms=DAT.create_train_transforms(resize))
 
-    val_dataset = DeepFakeClassifierDataset(crops_dir='crops',  data_path=f'{data_path}', mode='val', normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=3, reduce_val=True, transforms=DAT.create_val_transforms(resize))
+    train_transforms = create_train_transforms(resize, option=data_augment, dataset=da_dataset)
+    # Initialize datasets
+    dataset = DeepFakeTrainingDataset(crops_dir='crops', data_path=f'{data_path}', hardcore=True, normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=8, transforms=train_transforms)
+
+    val_dataset = DeepFakeTrainingDataset(crops_dir='crops',  data_path=f'{data_path}', mode='val', normalize = normalization, folds_csv=f'{data_path}/folds.csv', fold=8, reduce_val=True, transforms=DAT.create_val_transforms(resize))
     val_dataset.reset(1, seed)
 
     for epoch in range(epochs):
@@ -121,14 +131,17 @@ def main():
 
         if args.local_rank == 0:
             model.eval()
-            loss = validate(model, val_dataset, epoch, criterion, min(2*batch_size, 64), writer, args.local_rank)
+
+            loss = validate(model, val_dataset, epoch, criterion, 2*batch_size, writer, execution_id, args.local_rank)
 
             if loss < best_loss:
+                best_loss = loss
+
                 to_save = { 'epoch': epoch,
                             'variant': variant,
                             'model_name': model_name,
                             'model_state_dict': model.state_dict(),
-                            'best_loss': loss,}
+                            'best_loss': best_loss,}
 
                 torch.save(to_save, path_to_save)
 
@@ -143,7 +156,7 @@ def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoc
 
     optimizer.zero_grad()
 
-    for idx, (data) in enumerate(tqdm(loader, desc=f'Epoch {epoch}: lr: {scheduler["scheduler"].get_lr()}', total=epoch_size)):
+    for idx, (data) in enumerate(tqdm(loader, desc=f'Epoch {epoch}: lr: {scheduler["scheduler"].get_last_lr()}', total=epoch_size)):
 
         inputs, labels = data['image'].cuda(), data['labels'].float().cuda()
 
@@ -199,7 +212,7 @@ def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoc
         writer.add_scalar('Train/Real Loss', r_losses.avg, global_step=epoch)
 
 
-def validate(model, dataset, epoch, criterion, batch_size, writer, local_rank):
+def validate(model, dataset, epoch, criterion, batch_size, writer, execution_id, local_rank):
 
     loader = DataLoader(dataset, batch_size=batch_size, num_workers=8, shuffle= None, pin_memory=True)
 
@@ -207,15 +220,24 @@ def validate(model, dataset, epoch, criterion, batch_size, writer, local_rank):
     f_losses = AverageMeter()
     r_losses = AverageMeter()
 
+    pairs_prob_and_target = []
+
     with torch.no_grad():
 
         for data in tqdm(loader):
 
             # Get the inputs and labels
-            inputs, labels, img_name, valid, rotations = [*data.values()]
+            inputs, labels, img_name, valid = [*data.values()]
             inputs, labels = inputs.cuda(), labels.float().cuda()
             outputs = model(inputs)
             loss = criterion(outputs, labels)
+
+            probs = torch.sigmoid(outputs)  # Output to probability.
+
+            # Measure accuracy based on thresholds
+
+            probs_and_targets = torch.stack((probs.cpu(), labels.cpu())).squeeze(2)
+            pairs_prob_and_target.append(probs_and_targets)
 
             # Save statistics
             losses.update(loss.item(), outputs.size(0))
@@ -234,6 +256,20 @@ def validate(model, dataset, epoch, criterion, batch_size, writer, local_rank):
             writer.add_scalar('Validation/Total Loss', losses.avg, global_step = epoch)
             writer.add_scalar('Validation/Fake Loss - val', f_losses.avg, global_step=epoch)
             writer.add_scalar('Validation/Real Loss - val', r_losses.avg, global_step=epoch)
+
+            ppt = torch.cat(pairs_prob_and_target, dim=1)
+
+            accuracy_02 = accuracy_score(ppt[1, :].numpy(), (ppt[0, :] > 0.2).float().numpy())
+            accuracy_05 = accuracy_score(ppt[1, :].numpy(), (ppt[0, :] > 0.5).float().numpy())
+            accuracy_07 = accuracy_score(ppt[1, :].numpy(), (ppt[0, :] > 0.7).float().numpy())
+
+            os.makedirs(f'outputs_dfdc/{execution_id}', exist_ok=True)
+
+            pd.DataFrame(ppt.transpose(1, 0).numpy(), columns=['prob', 'target']).to_csv(f'outputs_dfdc/{execution_id}/val_vector_epoch{epoch:02}.csv', index=False)
+
+            writer.add_scalar(f'Validation/Accuracy/Threshold 0.2', accuracy_02, global_step=epoch)
+            writer.add_scalar(f'Validation/Accuracy/Threshold 0.5', accuracy_05, global_step=epoch)
+            writer.add_scalar(f'Validation/Accuracy/Threshold 0.7', accuracy_07, global_step=epoch)
 
         return losses.avg
 

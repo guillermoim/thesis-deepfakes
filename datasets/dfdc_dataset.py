@@ -25,7 +25,7 @@ def change_padding(image, part=5):
     return image
 
 
-class DeepFakeTrainingDataset(Dataset):
+class DFDCDataset(Dataset):
 
     def __init__(self,
                  data_path="/mnt/sota/datasets/deepfake",
@@ -41,7 +41,7 @@ class DeepFakeTrainingDataset(Dataset):
                  reduce_val=True,
                  oversample_real=True,
                  transforms=None,
-                 test = 11
+                 test=11
                  ):
         super().__init__()
         self.data_root = data_path
@@ -73,7 +73,6 @@ class DeepFakeTrainingDataset(Dataset):
                 diff_path = os.path.join(self.data_root, "diffs", video, img_file[:-4] + "_diff.png")
 
                 try:
-                    
                     msk = cv2.imread(diff_path, cv2.IMREAD_GRAYSCALE)
                     if msk is not None:
                         mask = msk
@@ -91,8 +90,8 @@ class DeepFakeTrainingDataset(Dataset):
                 if self.mode == "train" and self.padding_part > 3:
                     image = change_padding(image, self.padding_part)
 
-                valid_label = np.count_nonzero(mask[mask > 20]) > 32 or label < 0.5
-                valid_label = 1 if valid_label else 0
+                #valid_label = np.count_nonzero(mask[mask > 20]) > 32 or label < 0.5
+                #valid_label = 1 if valid_label else 0
 
                 if self.transforms:
                     data = self.transforms(image=image, mask=mask, landmarks=landmarks, label=label)
@@ -100,8 +99,7 @@ class DeepFakeTrainingDataset(Dataset):
                     #mask = data["mask"]
 
                 image = img_to_tensor(image, self.normalize)
-                return {"image": image, "labels": np.array((label,)), "img_name": os.path.join(video, img_file),
-                        "valid": valid_label}
+                return {"image": image, "labels": np.array((label,)), "path": os.path.join(self.data_root, video, img_file), }
 
             except Exception as e:
                 traceback.print_exc(file=sys.stdout)

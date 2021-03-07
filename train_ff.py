@@ -105,7 +105,6 @@ def main():
     if args.local_rank == 0:
         writer.add_text('Description', str(desc), global_step=0)
 
-
     train_transform = create_train_transforms(resize, option=data_augment, dataset=da_dataset,
                                               shift_limit=.01, scale_limit=.05, rotate_limit=5,)
     # Train split containing both raw, c23 and c40
@@ -238,7 +237,7 @@ def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoc
 
 def validate(model, datasets, key, epoch, batch_size, writer, local_rank, execution_id):
 
-    loader = DataLoader(datasets[key], batch_size=batch_size, num_workers=8, shuffle= None, pin_memory=True)
+    loader = DataLoader(datasets[key], batch_size=batch_size, num_workers=8, shuffle=None, pin_memory=True)
 
     losses = AverageMeter()
     f_losses = AverageMeter()

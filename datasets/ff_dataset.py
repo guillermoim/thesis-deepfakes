@@ -65,11 +65,13 @@ class ImagesDataset(Dataset):
         mid_video_id, mid_frame_id, mid_image, target = data[len(data)//2]
         images = [x[2] if x[0] == mid_video_id else mid_image for x in data]
         if self.window_size > 1:
-            return mid_video_id, mid_frame_id, torch.stack(images).permute(1, 0, 2, 3), target
-        else:
-            image_tensor = images[0]
+            #return mid_video_id, mid_frame_id, torch.stack(images).permute(1, 0, 2, 3), torch.tensor([target])
+            return {"mid_video_id": mid_video_id, "mid_frame_id": mid_frame_id , "images":  torch.stack(images).permute(1, 0, 2, 3), "labels": torch.tensor([target])}
 
-            return mid_video_id, mid_frame_id, image_tensor, torch.tensor([target])
+        else:
+            #img = images[0]
+            item = {"image": images[0], "labels": np.array((target,)), "img_name": os.path.join(mid_video_id, mid_frame_id), }
+            return item
 
     def _get_item(self, index):
         img = self.image_paths[index]
@@ -85,7 +87,11 @@ class ImagesDataset(Dataset):
 
         if self.transform is not None:
             image = self.transform(image=image, mask=mask, label=target.item(), landmarks=landmarks)['image']
-        return img['video_id'], img['frame_id'], img_to_tensor(image, self.normalization), target
+
+        image = img_to_tensor(image, self.normalization)
+
+        return img['video_id'], img['frame_id'], image, target
+
 
     def __len__(self):
         return len(self.image_paths) - self.window_size // 2

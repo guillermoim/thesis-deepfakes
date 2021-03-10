@@ -70,7 +70,8 @@ class ImagesDataset(Dataset):
 
         else:
             #img = images[0]
-            item = {"image": images[0], "labels": np.array((target,)), "img_name": os.path.join(mid_video_id, mid_frame_id), }
+            item = {"image": images[0], "labels": np.array((target,)),
+                    "img_name": os.path.join(mid_video_id, mid_frame_id), "valid": np.array([1])}
             return item
 
     def _get_item(self, index):

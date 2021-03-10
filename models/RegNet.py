@@ -2,8 +2,6 @@ import os
 import pycls.core.checkpoint as checkpoint
 from pycls.core.io import cache_url
 from pycls.models.anynet import AnyNet
-from pycls.models.effnet import EffNet
-import torch
 
 # URL prefix for pretrained models
 _URL_PREFIX = "https://dl.fbaipublicfiles.com/pycls/dds_baselines"

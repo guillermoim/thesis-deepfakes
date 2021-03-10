@@ -4,10 +4,12 @@ from timm.models import efficientnet
 from pretrainedmodels.models.inceptionv4 import inceptionv4
 from pretrainedmodels.models.xception import xception, pretrained_settings
 from efficientnet_pytorch import EfficientNet
-from RegNet import regnety
-from focal_loss import FocalLoss
+from .RegNet import regnety
+from .focal_loss import FocalLoss
 
-models_info = {'efficientnet-b3': {
+models_info = { 'efficientnet-b0' : {'normalization': {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}},
+
+                'efficientnet-b3': {
                     'normalization': {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
                     'input_resize': 300,
                     'num_features' : 1536,
@@ -46,14 +48,13 @@ models_info = {'efficientnet-b3': {
             }
 
 
-class  HelperModel(torch.nn.Module):
+class HelperModel(torch.nn.Module):
     def __init__(self, encoder, num_features, out_classes, dropout_rate=0.0) -> None:
         super().__init__()
         self.encoder = encoder
         self.avg_pool = torch.nn.AdaptiveAvgPool2d((1, 1))
         self.dropout = torch.nn.Dropout(dropout_rate)
         self.fc = torch.nn.Linear(num_features, out_classes, bias=False)
-
 
     def forward(self, x):
         x = self.encoder.forward_features(x)
@@ -75,10 +76,18 @@ def load_saved_model(path_to_model):
 
     return model, resize, saved['model_name'], saved['best_loss'], saved['epoch'], normalization
 
+
 def load_config(name, variant, n_epochs, epoch_size):
 
     # Just use BCE & FocalLoss
     num_classes = 1
+
+    if name == 'efficientnet-b0':
+        model = EfficientNet.from_name('efficientnet-b0')
+        normalization = models_info[name]['normalization']
+        resize = 224
+        model._fc = torch.nn.Linear(1280, num_classes, bias=False)
+
 
     if name == 'efficientnet-b3':
 

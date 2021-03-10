@@ -1,5 +1,6 @@
 import cv2
 import os
+import torch
 
 from .dfdc_dataset import DFDCDataset
 from .ff_dataset import read_dataset, CompositeDataset
@@ -23,8 +24,8 @@ def create_val_transforms(size=300):
 
 def create_train_transforms(size=300, option='policy_1', shift_limit=0.1, scale_limit=0.2, rotate_limit=10, dataset='faceforensics'):
 
-    assert option in ('policy_1', 'policy_2', 'policy_3', 'policy_4', 'policy_5'),\
-        "option must be one of ('policy_0', 'policy_1', 'policy_2', 'policy_3')"
+    assert option in [f'policy_{i}' for i in range(1, 6)],\
+        f"option must be one of ('policy_0', 'policy_1', 'policy_2', 'policy_3') NOT {option}"
 
     assert dataset in ('faceforensics', 'dfdc', ), "Dataset not recognized"
 
@@ -112,38 +113,65 @@ def read_training_dataset(data_dir, transform, normalization, filter = lambda x:
     return CompositeDataset(*trains), CompositeDataset(*vals), CompositeDataset(*tests)
 
 
-def create_dataset(dataset='dfdc', data_root_path='', normalization=None, size=220, mode='train',
-                   da_policy='policy_0',
-                   filter_ = lambda x: ('original' in x or 'neural' in x)):
+def create_train_dataset(dataset='dfdc', data_root_path='', normalization=None, size=220, da_policy='policy_0',
+                   filter_ = lambda x: ('original' in x or 'neural' in x), seed=100):
 
     # Use original and neural_textures (could be modified) when using FF
 
     assert dataset in ('dfdc', 'faceforensics'), "The dataset must be either 'dfdc' or 'ff'"
-    assert mode in ('train', 'val'), "The modeis either train or val"
+    #assert mode in ('train', 'val'), "The modeis either train or val"
 
     if dataset =='dfdc':
 
-        if mode== 'train':
-            transforms = create_train_transforms(size, option=da_policy, dataset=dataset)
-        elif mode== 'val':
-            transforms = create_val_transforms(size)
-
+        transforms = create_train_transforms(size, option=da_policy, dataset=dataset)
         res = DFDCDataset(crops_dir='crops', data_path=data_root_path, hardcore=True, fold=10,
                                           normalize=normalization, folds_csv=os.path.join(data_root_path, 'folds.csv'),
                                           transforms=transforms)
+        res.reset(0, seed)
 
     elif dataset == 'faceforensics':
 
-        if mode == 'train':
-            transforms = create_train_transforms(size, option=da_policy, dataset=dataset)
-            res, _, _ = read_training_dataset(data_root_path, filter=filter_, transform=transforms,
-                                              normalization=normalization,
-                                              splits_path=os.path.join(data_root_path, '../ff_splits'))
-        elif mode == 'val':
-            transforms = create_val_transforms(size)
-            _, res, _ = read_training_dataset(data_root_path, filter=filter_, transform=transforms,
+        transforms = create_train_transforms(size, option=da_policy, dataset=dataset)
+        res, _, _ = read_training_dataset(data_root_path, filter=filter_, transform=transforms,
                                               normalization=normalization,
                                               splits_path=os.path.join(data_root_path, '../ff_splits'))
 
     return res
 
+
+def create_val_dataset(dataset='dfdc', data_root_path='', normalization=None, size=220,
+                       filter_=lambda x: ('original' in x or 'neural' in x)):
+
+    val_datsets = {}
+
+    transforms = create_val_transforms(size)
+    if dataset == 'dfdc':
+        ds = DFDCDataset(crops_dir='crops', data_path=data_root_path, hardcore=True, fold=10,
+                      normalize=normalization, folds_csv=os.path.join(data_root_path, 'folds.csv'), mode='val',
+                      transforms=transforms)
+        ds.reset(0, 0)
+        val_datsets['dfdc_val'] = ds
+
+    elif dataset == 'faceforensics':
+        raw_filter = lambda x: filter_(x) and 'raw' in x
+        _, raw_val, _ = read_training_dataset(data_root_path, transforms, normalization=normalization,
+                                              filter=raw_filter, splits_path=os.path.join(data_root_path, '../ff_splits'))
+        del _
+        val_datsets['raw'] = raw_val
+
+        # validation set specific for c23
+        c23_filter = lambda x: filter_(x) and 'c23' in x
+        _, c23_val, _ = read_training_dataset(data_root_path, transforms, normalization=normalization,
+                                              filter=c23_filter, splits_path=os.path.join(data_root_path, '../ff_splits'))
+        del _
+        val_datsets['c23'] = c23_val
+
+        # validation set specific for c40
+        c40_filter = lambda x: filter_(x) and 'c40' in x
+        _, c40_val, _ = read_training_dataset(data_root_path, transforms, normalization=normalization,
+                                              filter=c40_filter, splits_path=os.path.join(data_root_path, '../ff_splits'))
+        del _
+        val_datsets['c40'] = c40_val
+
+
+    return val_datsets

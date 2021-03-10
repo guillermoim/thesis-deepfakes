@@ -90,8 +90,8 @@ class DFDCDataset(Dataset):
                 if self.mode == "train" and self.padding_part > 3:
                     image = change_padding(image, self.padding_part)
 
-                #valid_label = np.count_nonzero(mask[mask > 20]) > 32 or label < 0.5
-                #valid_label = 1 if valid_label else 0
+                valid_label = np.count_nonzero(mask[mask > 20]) > 32 or label < 0.5
+                valid_label = 1 if valid_label else 0
 
                 if self.transforms:
                     data = self.transforms(image=image, mask=mask, landmarks=landmarks, label=label)
@@ -99,7 +99,8 @@ class DFDCDataset(Dataset):
                     #mask = data["mask"]
 
                 image = img_to_tensor(image, self.normalize)
-                return {"image": image, "labels": np.array((label,)), "path": os.path.join(self.data_root, video, img_file), }
+                return {"image": image, "labels": np.array((label,)),
+                        "path": os.path.join(self.data_root, video, img_file), "valid": valid_label}
 
             except Exception as e:
                 traceback.print_exc(file=sys.stdout)

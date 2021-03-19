@@ -25,7 +25,7 @@ def main():
     parser.add_argument('--model', choices=models.get_available_models(),
                         type=str, required=True, help='Specify the type of model to train')
     parser.add_argument('--v', choices=[0, 1, 2], type=int, default=0, help='Specify training variant')
-    parser.add_argument('--epochs', type=int, default=30, help='Total number of epochs')
+    parser.add_argument('--epochs', type=int, default=50, help='Total number of epochs')
     parser.add_argument('--epoch_size', type=int, default=300, help='Size (in num of batches) of each epoch')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
     parser.add_argument('--local_rank', type=int, default=0)
@@ -84,7 +84,7 @@ def main():
     if distributed:
         model = convert_syncbn_model(model)
     if amp_:
-        model, optimizer = amp.initialize(model, optimizer, opt_level='O1', loss_scale='dynamic')
+        model, optimizer = amp.initialize(model, optimizer, opt_level='O2', loss_scale='dynamic')
 
     if distributed:
         model = DistributedDataParallel(model, delay_allreduce=True)
@@ -100,7 +100,8 @@ def main():
     train = create_train_dataset(da_dataset, data_path, normalization, resize, data_augment)
 
     # For validation, different levels of compression go separately.
-    val_datasets = create_val_dataset(da_dataset, data_path, normalization, 220)
+    val_datasets = create_val_dataset(da_dataset, data_path, normalization, resize)
+
 
     for epoch in range(epochs):
 

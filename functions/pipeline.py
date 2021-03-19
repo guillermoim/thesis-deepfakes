@@ -28,6 +28,7 @@ def train_iteration(model, dataset, criterion, optimizer, scheduler, epoch, epoc
         outputs = model(inputs)
 
         outputs = outputs[valid_idx]
+
         labels = labels[valid_idx]
 
         if labels.size(0) < 1:
@@ -83,55 +84,54 @@ def validate(model, val_ds_name, dataset, epoch, criterion, batch_size, writer, 
 
     pairs_prob_and_target = []
 
-    with torch.no_grad():
+    pbar = tqdm(loader)
 
-        pbar = tqdm(loader)
+    for idx, data in enumerate(pbar):
 
-        for idx, data in enumerate(pbar):
+        # Get the inputs and labels
+        inputs, labels = data["image"], data["labels"]
+        inputs, labels = inputs.cuda(non_blocking=True), labels.float().cuda(non_blocking=True)
 
-            # Get the inputs and labels
-            inputs, labels = data["image"], data["labels"]
-            inputs, labels = inputs.cuda(), labels.float().cuda()
-
+        with torch.no_grad():
             outputs = model(inputs)
             loss = criterion(outputs, labels)
 
-            probs = torch.sigmoid(outputs)  # Output to probability.
+        probs = torch.sigmoid(outputs)  # Output to probability.
 
-            # Measure accuracy based on thresholds
-            probs_and_targets = torch.stack((probs.cpu(), labels.cpu())).squeeze(2)
-            pairs_prob_and_target.append(probs_and_targets)
+        # Measure accuracy based on thresholds
+        probs_and_targets = torch.stack((probs.cpu(), labels.cpu())).squeeze(2)
+        pairs_prob_and_target.append(probs_and_targets)
 
-            # Save statistics
-            losses.update(loss.item(), outputs.size(0))
+        # Save statistics
+        losses.update(loss.item(), outputs.size(0))
 
-            fake_idx = labels > .5
-            real_idx = labels < .5
+        fake_idx = labels > .5
+        real_idx = labels < .5
 
-            fake_loss = F.binary_cross_entropy_with_logits(outputs[fake_idx], labels[fake_idx]).item() if fake_idx.any() else 0.
-            real_loss = F.binary_cross_entropy_with_logits(outputs[real_idx], labels[real_idx]).item() if real_idx.any() else 0.
+        fake_loss = F.binary_cross_entropy_with_logits(outputs[fake_idx], labels[fake_idx]).item() if fake_idx.any() else 0.
+        real_loss = F.binary_cross_entropy_with_logits(outputs[real_idx], labels[real_idx]).item() if real_idx.any() else 0.
 
-            f_losses.update(fake_loss, fake_idx.size(0) if fake_idx.any() > 0 else 0)
-            r_losses.update(real_loss, real_idx.size(0) if real_idx.any() > 0 else 0)
+        f_losses.update(fake_loss, fake_idx.size(0) if fake_idx.any() > 0 else 0)
+        r_losses.update(real_loss, real_idx.size(0) if real_idx.any() > 0 else 0)
 
-            pbar.set_description(f'Epoch {epoch} val. {val_ds_name} Loss:{losses.avg:.4f}-Fake.Loss:{f_losses.avg:.4f}-Real.Loss:{r_losses.avg:.4f}')
+        pbar.set_description(f'Epoch {epoch} val. {val_ds_name} Loss:{losses.avg:.4f}-Fake.Loss:{f_losses.avg:.4f}-Real.Loss:{r_losses.avg:.4f}')
 
-        writer.add_scalar(f'Validation-{val_ds_name}/Total Loss', losses.avg, global_step=epoch)
-        writer.add_scalar(f'Validation-{val_ds_name}/Fake Loss - val', f_losses.avg, global_step=epoch)
-        writer.add_scalar(f'Validation-{val_ds_name}/Real Loss - val', r_losses.avg, global_step=epoch)
+    writer.add_scalar(f'Validation-{val_ds_name}/Total Loss', losses.avg, global_step=epoch)
+    writer.add_scalar(f'Validation-{val_ds_name}/Fake Loss - val', f_losses.avg, global_step=epoch)
+    writer.add_scalar(f'Validation-{val_ds_name}/Real Loss - val', r_losses.avg, global_step=epoch)
 
-        ppt = torch.cat(pairs_prob_and_target, dim=1)
+    ppt = torch.cat(pairs_prob_and_target, dim=1)
 
-        accuracy_02 = accuracy_score(ppt[1, :].numpy(), (ppt[0, :] > 0.2).float().numpy())
-        accuracy_05 = accuracy_score(ppt[1, :].numpy(), (ppt[0, :] > 0.5).float().numpy())
-        accuracy_07 = accuracy_score(ppt[1, :].numpy(), (ppt[0, :] > 0.7).float().numpy())
+    accuracy_02 = accuracy_score(ppt[1, :].numpy(), (ppt[0, :] > 0.2).float().numpy())
+    accuracy_05 = accuracy_score(ppt[1, :].numpy(), (ppt[0, :] > 0.5).float().numpy())
+    accuracy_07 = accuracy_score(ppt[1, :].numpy(), (ppt[0, :] > 0.7).float().numpy())
 
-        os.makedirs(f'outputs/{execution_id}/{val_ds_name}', exist_ok=True)
+    os.makedirs(f'outputs/{execution_id}/{val_ds_name}', exist_ok=True)
 
-        pd.DataFrame(ppt.transpose(1, 0).numpy(), columns=['prob', 'target']).to_csv(f'outputs/{execution_id}/{val_ds_name}/val_vector_epoch{epoch:02}.csv', index=False)
+    pd.DataFrame(ppt.transpose(1, 0).numpy(), columns=['prob', 'target']).to_csv(f'outputs/{execution_id}/{val_ds_name}/val_vector_epoch{epoch:02}.csv', index=False)
 
-        writer.add_scalar(f'Validation-{val_ds_name}/Accuracy/Threshold 0.2', accuracy_02, global_step=epoch)
-        writer.add_scalar(f'Validation-{val_ds_name}/Accuracy/Threshold 0.5', accuracy_05, global_step=epoch)
-        writer.add_scalar(f'Validation-{val_ds_name}/Accuracy/Threshold 0.7', accuracy_07, global_step=epoch)
+    writer.add_scalar(f'Validation-{val_ds_name}/Accuracy/Threshold 0.2', accuracy_02, global_step=epoch)
+    writer.add_scalar(f'Validation-{val_ds_name}/Accuracy/Threshold 0.5', accuracy_05, global_step=epoch)
+    writer.add_scalar(f'Validation-{val_ds_name}/Accuracy/Threshold 0.7', accuracy_07, global_step=epoch)
 
-        return losses.avg
+    return losses.avg

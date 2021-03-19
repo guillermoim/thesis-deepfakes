@@ -6,6 +6,9 @@ from pretrainedmodels.models.xception import xception, pretrained_settings
 from efficientnet_pytorch import EfficientNet
 from .RegNet import regnety
 from .focal_loss import FocalLoss
+from .pdarts.genotypes import GENOTYPES
+from .pdarts.model import NetworkDF as NetworkDarts
+
 
 models_info = { 'efficientnet-b0' : {'normalization': {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}},
 
@@ -40,11 +43,49 @@ models_info = { 'efficientnet-b0' : {'normalization': {"mean": [0.485, 0.456, 0.
                     'input_resize': 224,
                     'num_features': 888,
                 },
-            'regnety-8.0GF':{
+                'regnety-8.0GF':{
                     'normalization': {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
                     'input_resize': 224,
                     'num_features': 2016,
-                }
+                },
+
+                'darts-cifar-10':{
+                    'normalization': {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+                    'input_resize': 224,
+
+                },
+
+                'deepfakes-darts-policy-1':{
+                    'normalization': {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+                    'input_resize': 224,
+
+                },
+
+                'deepfakes-darts-policy-2':{
+                    'normalization': {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+                    'input_resize': 224,
+
+                },
+
+                'deepfakes-darts-policy-3':{
+                    'normalization': {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+                    'input_resize': 224,
+
+                },
+
+                'deepfakes-darts-policy-4':{
+                    'normalization': {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+                    'input_resize': 224,
+
+                },
+
+                'deepfakes-darts-policy-5':{
+                    'normalization': {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+                    'input_resize': 224,
+
+                },
+
+
             }
 
 
@@ -140,13 +181,49 @@ def load_config(name, variant, n_epochs, epoch_size):
         resize = models_info[name]['input_resize']
         normalization = models_info[name]['normalization']
 
+    elif name == 'darts-cifar-10':
+
+        model = NetworkDarts(46, 1, 20, False, GENOTYPES.get('cifar'))
+        resize = models_info[name]['input_resize']
+        normalization = models_info[name]['normalization']
+
+    elif name == 'deepfakes-darts-policy-1':
+
+        model = NetworkDarts(46, 1, 20, False, GENOTYPES.get(1))
+        resize = models_info[name]['input_resize']
+        normalization = models_info[name]['normalization']
+
+    elif name == 'deepfakes-darts-policy-2':
+
+        model = NetworkDarts(46, 1, 20, False, GENOTYPES.get(2))
+        resize = models_info[name]['input_resize']
+        normalization = models_info[name]['normalization']
+
+    elif name == 'deepfakes-darts-policy-3':
+
+        model = NetworkDarts(46, 1, 20, False, GENOTYPES.get(2))
+        resize = models_info[name]['input_resize']
+        normalization = models_info[name]['normalization']
+
+    elif name == 'deepfakes-darts-policy-4':
+
+        model = NetworkDarts(46, 1, 20, False, GENOTYPES.get(4))
+        resize = models_info[name]['input_resize']
+        normalization = models_info[name]['normalization']
+
+    elif name == 'deepfakes-darts-policy-5':
+
+        model = NetworkDarts(46, 1, 20, False, GENOTYPES.get(5))
+        resize = models_info[name]['input_resize']
+        normalization = models_info[name]['normalization']
+
     if variant == 0:
 
         lr = 0.01
 
         criterion = torch.nn.BCEWithLogitsLoss()
         optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4, nesterov=True)
-        scheduler = {'scheduler': torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda= lambda x : (n_epochs*epoch_size - x) / (n_epochs*epoch_size)),
+        scheduler = {'scheduler': torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: (n_epochs*epoch_size-x) / (n_epochs*epoch_size)),
                      'mode': 'iteration'}
 
         desc = {'model_name' : name,
@@ -160,12 +237,14 @@ def load_config(name, variant, n_epochs, epoch_size):
 
     elif variant == 1:
 
-        lr = 0.01
+        lr = 0.15
 
         criterion = torch.nn.BCEWithLogitsLoss()
         optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4, nesterov=True)
-        scheduler = {'scheduler': torch.optim.lr_scheduler.StepLR(optimizer, step_size=10),
-                     'mode': 'epoch'}
+        scheduler = {'scheduler': torch.optim.lr_scheduler.LambdaLR(optimizer,
+                                                                    lr_lambda=lambda x: (n_epochs * epoch_size - x) / (
+                                                                                n_epochs * epoch_size)),
+                     'mode': 'iteration'}
 
         desc = {'model_name': name,
                 'epochs': str(n_epochs),

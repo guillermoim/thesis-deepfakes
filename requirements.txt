@@ -126,7 +126,7 @@ tqdm==4.48.0
 traitlets==4.3.3
 transaction==3.0.0
 translationstring==1.4
-urllib3==1.25.9
+urllib3==1.26.5
 velruse==1.1.1
 venusian==3.0.0
 visdom==0.1.8.9
